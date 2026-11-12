@@ -7,7 +7,7 @@
     "node": ">=22"
   },
   "scripts": {
-    "forge": "tsx packages/backend/src/cli.ts",
+    "forge": "node --import tsx packages/backend/src/cli.ts",
     "test": "vitest run",
     "lint": "eslint .",
     "typecheck": "tsc -p tsconfig.json"
