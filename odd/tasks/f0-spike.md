@@ -26,20 +26,20 @@ Objective: Phase 0 of `docs/Forge — Project Definition.md`. Branch `feat/f0-sp
 
 | ID | Specs | Route | Status | Commit |
 | --- | --- | --- | --- | --- |
-| T0 | S9 | inline | done | e7a413d (docs), scaffold pending |
-| T1 | S11 | inline | done (probes) | ADR pending |
-| T2 | S3, S9 | inline | pending | |
-| T3 | S4 | inline | pending | |
-| T4 | S2 | inline | pending | |
-| T5 | S9 | inline | pending | |
-| T6 | S2 | inline | pending | |
-| T7 | S3 | inline | pending | |
-| T8 | S1, S4 | inline | pending | |
-| T9 | S5 | inline | pending | |
-| T10 | S6 | inline | pending | |
-| T11 | S8 | inline | pending | |
-| T12 | S7 | inline | pending | |
-| T13 | S8, S10, S11 | inline | pending | |
+| T0 | S9 | inline | done | 8d14e25, bf656ae (CI) |
+| T1 | S11 | inline | done | bf656ae (ADRs 0001-0003) |
+| T2 | S3, S9 | inline | done | f9561e9 |
+| T3 | S4 | inline | done | 1b5bb4d |
+| T4 | S2 | inline | done | 570d0b3, c96440b |
+| T5 | S9 | inline | done | c0dd4f1 |
+| T6 | S2 | inline | done | c96440b |
+| T7 | S3 | inline | done | c96440b |
+| T8 | S1, S4 | inline | done | c4b3113, c96440b, 9e0ccc4 |
+| T9 | S5 | inline | done | c96440b, c14e2e7 |
+| T10 | S6 | inline | done | 8fd8607 |
+| T11 | S8 | inline | done | c14e2e7 |
+| T12 | S7 | inline | done | e45a1d7, latest fixture fix |
+| T13 | S8, S10, S11 | inline | done | docs/spikes/f0.md |
 
 Route evidence: no Writer trigger (units depend on each other); all inline.
 
@@ -48,4 +48,6 @@ Route evidence: no Writer trigger (units depend on each other); all inline.
 - L1 (2026-11-11) Original request: Forge Phase 0 spike prompt (pasted), scope "solo la Fase 0 (spike técnico)"; deliverables S1–S8, exit gate S10, work style: "Commits pequeños con Conventional Commits, en la rama `feat/f0-spike`. Cada desviación de `docs/` se registra como ADR." "Pregúntame antes de instalar algo global o de tocar archivos fuera del repo."
 - L2 (2026-11-11) User: "ya cree este repo https://github.com/sd8956/Forge para este proyecto, apruebo el plan". Plan approved, including writing per-worktree trust to `~/.claude.json` only if worktrees do not inherit trust.
 - L3 Probes on Claude Code 2.1.322: agent `mcpServers` load with `--agent` only in trusted folders; worktrees under a trusted repo inherit trust (no `~/.claude.json` writes needed); `${VAR}` is NOT expanded in agent frontmatter `mcpServers`; `--mcp-config` loads regardless of trust; agent `tools:` must list `mcp__<server>`; `SessionEnd` fires on `tmux kill-session` (`reason: other`) and on `/exit` (`prompt_input_exit`).
-- Next: T0 scaffold.
+- L4 Real-run findings: agent `permissionMode` ignored as main thread (CLI default `auto`), fixed by passing `--permission-mode` from the agent file; in `acceptEdits` MCP tools need `permissions.allow`; agent refuses drill instructions from task data; Engram search used `all_projects: true`; task worktrees freeze step templates at creation; `tsx` CLI child survives SIGKILL (use `node --import tsx`).
+- L5 Exit gate passed: 6 real runs documented in `docs/spikes/f0.md`; 52 tests green; lint and typecheck green.
+- Next: user decides push/PR; Phase 1 design changes listed in `docs/spikes/f0.md`.
