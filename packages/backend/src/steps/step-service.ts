@@ -17,6 +17,7 @@ import { reportEvent } from "../domain/step-machine.js";
 import { decideStop } from "../domain/stop-policy.js";
 import { shellQuote, type Tmux } from "../runner/tmux.js";
 import { ensureWorktree, worktreePathFor } from "../runner/worktree.js";
+import { agentPermissionMode } from "./agent-file.js";
 import { renderInput, runDirFor, STEP_DEFINITIONS } from "./definitions.js";
 
 export class StepRequestError extends Error {}
@@ -85,13 +86,14 @@ export class StepService {
       await ensureWorktree(projectPath, req.taskId);
       mkdirSync(runDir, { recursive: true });
       writeFileSync(row.inputPath, renderInput(def, { stepId, taskId: req.taskId }));
+      const permissionMode = agentPermissionMode(worktreePath, def.agent);
       const files = this.renderSessionFiles(row, join(worktreePath, ".factory", "steps", def.settingsFile));
       // A stale session with the same name can only belong to a finished step.
       await this.deps.tmux.killSession(row.tmuxSession);
       await this.deps.tmux.newSession({
         name: row.tmuxSession,
         cwd: worktreePath,
-        command: this.claudeCommand(row, files),
+        command: this.claudeCommand(row, files, permissionMode),
         env: { FORGE_STEP_ID: row.id, ...this.deps.config.extraEnv },
       });
     } catch (error) {
@@ -141,13 +143,14 @@ export class StepService {
     return files;
   }
 
-  private claudeCommand(row: StepRow, files: { settings: string; mcp: string; exitCode: string }): string {
+  private claudeCommand(row: StepRow, files: { settings: string; mcp: string; exitCode: string }, permissionMode: string): string {
     const prompt = `Read ${runDirFor(row.taskId, row.kind)}/input.md and run the step.`;
     // The prompt goes first: --mcp-config is variadic and would swallow a trailing prompt.
     const args = [
       this.deps.config.claudeBin,
       prompt,
       "--agent", row.agent,
+      "--permission-mode", permissionMode,
       "--session-id", row.claudeSessionId,
       "--setting-sources", "project",
       "--settings", files.settings,

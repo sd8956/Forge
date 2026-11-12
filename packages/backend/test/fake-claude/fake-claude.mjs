@@ -10,7 +10,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 
 const VARIADIC = new Set(["--mcp-config"]);
-const WITH_VALUE = new Set(["--agent", "--session-id", "--setting-sources", "--settings", "--mcp-config", "--model"]);
+const WITH_VALUE = new Set(["--agent", "--session-id", "--setting-sources", "--settings", "--mcp-config", "--model", "--permission-mode"]);
 
 function parseArgv(argv) {
   const flags = {};
@@ -45,7 +45,7 @@ function trace(type, data = {}) {
   if (file) appendFileSync(file, `${JSON.stringify({ type, ...data })}\n`);
 }
 
-trace("started", { agent: flags["--agent"], prompt: positionals[0], settingSources: flags["--setting-sources"], scenario });
+trace("started", { agent: flags["--agent"], prompt: positionals[0], settingSources: flags["--setting-sources"], permissionMode: flags["--permission-mode"], scenario });
 
 async function hook(event, extra = {}) {
   const body = { session_id: sessionId, transcript_path: transcriptPath, cwd: process.cwd(), hook_event_name: event, ...extra };

@@ -27,6 +27,9 @@ Your job is to turn one backlog task into:
 Rules:
 
 - Do not write application code. Plan only.
+- Use the Read, Grep and Glob tools to read files and the Write and Edit tools to write them. Use Bash
+  only for read-only git commands (`git log`, `git diff`, `git status`) and `ls`; anything else asks a
+  person for permission.
 - Stay inside the worktree. Write only the files listed in the step's output contract.
 - Prefer the project's documents in `.factory/` over assumptions. If something essential is missing or
   contradictory, report the step as `blocked` and say exactly what is missing.

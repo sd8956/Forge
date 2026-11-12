@@ -72,6 +72,7 @@ describe("step lifecycle with a fake claude in tmux", () => {
       agent: "forge-planner",
       prompt: "Read .factory/runs/TASK-001/plan/input.md and run the step.",
       settingSources: "project",
+      permissionMode: "acceptEdits",
     });
     expect(trace.find((t) => t.type === "tools")).toMatchObject({ names: ["report_step"] });
     // The Stop hook after the report lets the session stop (no decision body).
@@ -147,6 +148,19 @@ describe("step lifecycle with a fake claude in tmux", () => {
     expect((await ctx.api.request("POST", "/steps", { projectPath: ctx.project, taskId: "TASK-999", step: "plan" })).status).toBe(400);
     expect((await ctx.api.request("POST", "/steps", { projectPath: ctx.project, taskId: "TASK-001", step: "deploy" })).status).toBe(400);
     expect((await ctx.api.request("POST", "/steps", { projectPath: ctx.project, taskId: "../etc", step: "plan" })).status).toBe(400);
+    expect(await ctx.tmux.listSessions()).toEqual([]);
+  });
+
+  it("refuses to launch an agent whose permission mode would skip the prompts", async () => {
+    const ctx = await setup("report");
+    const agentFile = join(ctx.project, ".claude", "agents", "forge-planner.md");
+    writeFileSync(agentFile, readFileSync(agentFile, "utf8").replace("permissionMode: acceptEdits", "permissionMode: bypassPermissions"));
+    execFileSync("git", ["-C", ctx.project, "-c", "user.name=t", "-c", "user.email=t@example.invalid", "commit", "-qam", "bypass"]);
+    const res = await ctx.api.request("POST", "/steps", { projectPath: ctx.project, taskId: "TASK-001", step: "plan" });
+    expect(res.status).toBe(400);
+    expect(JSON.stringify(res.body)).toContain("bypassPermissions");
+    const [step] = await ctx.api.steps();
+    expect(step).toMatchObject({ status: "failed", exitReason: "launch_failed" });
     expect(await ctx.tmux.listSessions()).toEqual([]);
   });
 
