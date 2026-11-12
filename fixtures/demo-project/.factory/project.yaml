@@ -1,0 +1,14 @@
+name: demo-project
+platforms: [cli]
+stack:
+  language: typescript
+  runtime: node22
+commands:
+  build: npm run build
+  test: npm test
+  up: node dist/cli.js
+policies:
+  step_timeout_minutes: 30
+  max_stop_blocks: 3
+review:
+  allowed_authors: []
