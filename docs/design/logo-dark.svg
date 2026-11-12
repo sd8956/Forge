@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Forge logo">
+  <rect width="64" height="64" rx="15" fill="#F97316"/>
+  <rect x="18" y="14" width="8" height="36" rx="2" fill="#17181A"/>
+  <rect x="18" y="14" width="28" height="8" rx="2" fill="#17181A"/>
+  <rect x="18" y="29" width="18" height="8" rx="2" fill="#17181A"/>
+  <rect x="40" y="29" width="8" height="8" rx="1.5" fill="#FFF1EA" transform="rotate(45 44 33)"/>
+</svg>
