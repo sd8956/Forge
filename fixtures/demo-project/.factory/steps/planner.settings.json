@@ -1,0 +1,37 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__factory",
+      "mcp__engram",
+      "Bash(git log:*)",
+      "Bash(git diff:*)",
+      "Bash(git status:*)",
+      "Bash(git ls-files:*)",
+      "Bash(ls:*)"
+    ]
+  },
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          { "type": "http", "url": "{{FORGE_URL}}/hooks/stop", "headers": { "x-forge-token": "{{FORGE_TOKEN}}" }, "timeout": 10 }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "matcher": "permission_prompt|idle_prompt",
+        "hooks": [
+          { "type": "http", "url": "{{FORGE_URL}}/hooks/notification", "headers": { "x-forge-token": "{{FORGE_TOKEN}}" }, "timeout": 10 }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          { "type": "http", "url": "{{FORGE_URL}}/hooks/session-end", "headers": { "x-forge-token": "{{FORGE_TOKEN}}" }, "timeout": 5 }
+        ]
+      }
+    ]
+  }
+}
