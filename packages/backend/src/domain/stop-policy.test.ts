@@ -40,8 +40,8 @@ describe("decideStop", () => {
     expect(decideStop({ ...base, backgroundTasks: 2 })).toEqual({ action: "allow", why: "background_tasks" });
   });
 
-  it("allows the stop when the step is waiting for a person", () => {
-    expect(decideStop({ ...base, stepStatus: "needs_human" })).toEqual({ action: "allow", why: "not_running" });
+  it("keeps the safety net after a person answered a prompt (needs_human)", () => {
+    expect(decideStop({ ...base, stepStatus: "needs_human" }).action).toBe("block");
   });
 
   it("allows the stop for steps that are already finished", () => {

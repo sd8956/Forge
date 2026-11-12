@@ -24,7 +24,8 @@ export type StopDecision =
  */
 export function decideStop(ctx: StopContext): StopDecision {
   if (ctx.reported) return { action: "allow", why: "reported" };
-  if (ctx.stepStatus !== "running") return { action: "allow", why: "not_running" };
+  // needs_human still blocks: once the person answers a prompt the agent must report too.
+  if (ctx.stepStatus !== "running" && ctx.stepStatus !== "needs_human") return { action: "allow", why: "not_running" };
   if (ctx.backgroundTasks > 0) return { action: "allow", why: "background_tasks" };
   if (ctx.blockCount >= ctx.maxBlocks) return { action: "allow", why: "block_limit" };
 
