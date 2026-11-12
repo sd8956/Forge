@@ -1,6 +1,14 @@
 {
   "permissions": {
-    "allow": ["Bash(git log:*)", "Bash(git diff:*)", "Bash(git status:*)", "Bash(ls:*)"]
+    "allow": [
+      "mcp__factory",
+      "mcp__engram",
+      "Bash(git log:*)",
+      "Bash(git diff:*)",
+      "Bash(git status:*)",
+      "Bash(git ls-files:*)",
+      "Bash(ls:*)"
+    ]
   },
   "hooks": {
     "Stop": [
