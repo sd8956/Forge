@@ -200,6 +200,10 @@ export class RunService implements StepPolicy {
           }
         : undefined;
 
+    const baseCommit = await git("git", ["-C", run.worktreePath, "merge-base", "HEAD", run.baseBranch], { encoding: "utf8" }).then(
+      (r) => r.stdout.trim(),
+      () => undefined,
+    );
     const taskSpec = `.factory/backlog/${run.taskId}.md`;
     const size = parseTaskSize(/^\s*-\s*Size:\s*([SML])\b/m.exec(this.readOptional(join(run.worktreePath, taskSpec)))?.[1]);
     const inputPath = join(run.worktreePath, outputDir, "input.md");
@@ -216,6 +220,7 @@ export class RunService implements StepPolicy {
       reads: contract.reads.filter((r) => existsSync(join(run.worktreePath, r))),
       branch: run.branch,
       baseBranch: run.baseBranch,
+      baseCommit,
       exit: def.exit,
       previous,
       failure,

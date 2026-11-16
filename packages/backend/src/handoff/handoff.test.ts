@@ -154,6 +154,7 @@ describe("renderInput", () => {
     reads: [".factory/architecture.md"],
     branch: "feat/TASK-001",
     baseBranch: "main",
+    baseCommit: "0caaec8b8a70063620cbf439af430426403766ba",
     exit: stepById(pipeline, "development").exit,
     previous: [{ kind: "plan", output: ".factory/runs/TASK-001/plan/1/output.md", summary: "Planned.", artifacts: [".factory/runs/TASK-001/plan/1/plan.md"] }],
   };
@@ -165,6 +166,7 @@ describe("renderInput", () => {
     expect(text).toContain("`dev-notes.md`");
     expect(text).toContain("`make check` exits 0");
     expect(text).toContain("report_step");
+    expect(text).toContain("- Base commit: `0caaec8b8a70063620cbf439af430426403766ba`");
     expect(text).not.toContain("Why this step runs again");
   });
 

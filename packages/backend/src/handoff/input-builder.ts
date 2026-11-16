@@ -24,6 +24,8 @@ export interface InputContext {
   reads: string[];
   branch: string;
   baseBranch: string;
+  /** Merge base of the task branch and its base, resolved by the backend so agents never compute it. */
+  baseCommit?: string | undefined;
   exit: PipelineStep["exit"];
   previous: PreviousStep[];
   /** Set when this step runs again because a later step failed (on_fail) or it failed itself. */
@@ -65,6 +67,7 @@ export function renderInput(ctx: InputContext): string {
       `- Attempt: ${ctx.attempt}`,
       `- Agent: \`${ctx.agent}\``,
       `- Task branch: \`${ctx.branch}\` (base \`${ctx.baseBranch}\`)`,
+      ...(ctx.baseCommit ? [`- Base commit: \`${ctx.baseCommit}\` (use this literal value; do not compute it)`] : []),
       `- Output directory: \`${ctx.outputDir}\``,
       "- All paths are relative to the worktree root (your working directory).",
     ].join("\n"),
