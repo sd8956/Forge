@@ -105,8 +105,11 @@ export class StepStore {
 export function toStepView(row: StepRow): StepView {
   return {
     id: row.id,
+    runId: row.runId,
     taskId: row.taskId,
     kind: row.kind,
+    attempt: row.attempt,
+    model: row.model,
     agent: row.agent,
     status: row.status,
     tmuxSession: row.tmuxSession,

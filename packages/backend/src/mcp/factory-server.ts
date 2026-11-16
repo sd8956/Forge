@@ -18,8 +18,8 @@ export function createFactoryMcpServer(stepId: string, service: StepService): Mc
         "The session is closed right after a successful report.",
       inputSchema: reportStepInputShape,
     },
-    (input) => {
-      const result = service.report(stepId, input);
+    async (input) => {
+      const result = await service.report(stepId, input);
       return { content: [{ type: "text", text: result.message }], isError: !result.ok };
     },
   );

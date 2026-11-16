@@ -1,5 +1,5 @@
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
-import type { RunStatus } from "@forge/shared";
+import type { RunStatus, RunView } from "@forge/shared";
 import { nextRunStatus, type RunEvent, type RunTransitionResult } from "../domain/run-machine.js";
 import type { Db } from "./client.js";
 import { events, runs, steps, type NewRunRow, type RunRow, type StepRow } from "./schema.js";
@@ -87,4 +87,22 @@ export class RunStore {
   recordEvent(id: string, type: string, payload: Record<string, unknown>): void {
     this.db.insert(events).values({ entity: "run", entityId: id, type, payload, ts: this.now() }).run();
   }
+}
+
+export function toRunView(row: RunRow): RunView {
+  return {
+    id: row.id,
+    taskId: row.taskId,
+    projectPath: row.projectPath,
+    branch: row.branch,
+    baseBranch: row.baseBranch,
+    status: row.status,
+    currentStep: row.currentStep,
+    attempts: row.attempts,
+    prUrl: row.prUrl,
+    prNumber: row.prNumber,
+    exitReason: row.exitReason,
+    createdAt: row.createdAt,
+    endedAt: row.endedAt,
+  };
 }

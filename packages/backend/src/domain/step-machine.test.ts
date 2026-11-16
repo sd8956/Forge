@@ -20,6 +20,9 @@ describe("step state machine", () => {
     ["needs_human", "timeout", "failed"],
     ["needs_human", "session_ended", "failed"],
     ["needs_human", "orphaned", "failed"],
+    ["queued", "cancel", "failed"],
+    ["running", "cancel", "failed"],
+    ["needs_human", "cancel", "failed"],
   ];
 
   it.each(allowed)("%s --%s--> %s", (from, event, to) => {
