@@ -10,6 +10,10 @@ export function isTerminalStepStatus(status: StepStatus): boolean {
   return TERMINAL_STEP_STATUSES.includes(status);
 }
 
+/** Lifecycle of one pipeline run (one task through every step). */
+export const RUN_STATUSES = ["queued", "running", "waiting_review", "needs_human", "done", "failed", "cancelled"] as const;
+export type RunStatus = (typeof RUN_STATUSES)[number];
+
 /** Pipeline step kinds the backend knows how to hand off and validate, in pipeline order. */
 export const STEP_KINDS = ["plan", "design", "development", "security", "e2e", "pr"] as const;
 export type StepKind = (typeof STEP_KINDS)[number];
