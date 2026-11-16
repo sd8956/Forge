@@ -29,16 +29,16 @@ Objective: Phase 1. One backlog task runs plan → design → development → se
 
 | ID | Specs | Route | Status | Commit |
 | --- | --- | --- | --- | --- |
-| T0 | S13 | inline | pending | |
-| T1 | S1 | inline | pending | |
-| T2 | S2 | inline | pending | |
-| T3 | S2 | inline | pending | |
-| T4 | S3 | inline | pending | |
-| T5 | S4 | inline | pending | |
-| T6 | S2, S7, S9 | inline | pending | |
-| T7 | S9 | inline | pending | |
-| T8 | S5, S6, S8 | inline | pending | |
-| T9 | S10 | inline | pending | |
+| T0 | S13 | inline | done | 432cd40 |
+| T1 | S1 | inline | done | 6a6c9b1 |
+| T2 | S2 | inline | done | 0bbe9e7 |
+| T3 | S2 | inline | done | 344548f |
+| T4 | S3 | inline | done | 0130837 |
+| T5 | S4 | inline | done | 063e7a4 |
+| T6 | S2, S7, S9 | inline | done | a82b372 |
+| T7 | S9 | inline | done | a82b372 |
+| T8 | S5, S6, S8 | inline | done | 38793c4 |
+| T9 | S10 | inline | done | 7023930 |
 | T10 | S10, S11, S13 | inline | pending | |
 
 T0 CLAUDE.md + scanners; T1 pipeline loader; T2 run machine + next-action; T3 run table; T4 handoff + output.md validation; T5 memory adapter; T6 RunService (advance, reconcile, resume, make check gate); T7 CLI; T8 fixture web app, agents, skills, settings; T9 fake-claude integration; T10 real runs + docs/runs/f1.md. Route evidence: units depend on each other; no Writer trigger; all inline.
@@ -48,4 +48,5 @@ T0 CLAUDE.md + scanners; T1 pipeline loader; T2 run machine + next-action; T3 ru
 - L1 (2026-11-16) Original request: Forge Phase 1 prompt (pasted), "Alcance de esta sesión: Fase 1 (pipeline de una tarea)" with deliverables S1–S10, exit gate S11, work style S13.
 - L2 (2026-11-16) User: "Si apruebo el plan". Approved: plan as presented (pipeline.yaml and output.md schemas, backend-validated exit criteria at report_step, attempt directories, skill subset ADR), plus `brew install semgrep gitleaks osv-scanner`, Playwright Chromium download to `~/.cache/ms-playwright`, and creating private repo `sd8956/forge-sandbox` with `gh`.
 - L3 Findings before code: repo has no `CLAUDE.md` (only the fixture's); demo fixture is a CLI, so it becomes a minimal web app for Playwright; Engram HTTP API verified live on 127.0.0.1:7437 (`GET /search?q=&project=`, `GET /observations?project=`; no topic_key filter).
-- Next: T0.
+- L4 (2026-11-16) Implementation T0–T9 done; 125 tests green 3× in a row; lint/typecheck green. Bug found by integration tests: same tmux name per step let the delayed close of attempt n kill attempt n+1; sessions now named `forge-<TASK>-<step>-<attempt>` (ADR 0004). ADRs 0004 (backend validates outputs, attempt dirs) and 0005 (skills subset, web fixture, run-task CLI, trust preflight, Engram scope). Tools installed: semgrep 1.185.0, gitleaks 8.30.1, osv-scanner 2.7.1, Playwright chromium-1255.
+- Next: T10 — create private repo sd8956/forge-sandbox, sandbox copy, real full run (TASK-001), forced failure run (seeded secret on feat/TASK-002), docs/runs/f1.md.
