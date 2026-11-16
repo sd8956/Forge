@@ -1,3 +1,5 @@
 .worktrees/
 .factory/runs/
 node_modules/
+test-results/
+playwright-report/

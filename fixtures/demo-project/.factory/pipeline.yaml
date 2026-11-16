@@ -1,0 +1,44 @@
+# Forge pipeline for one task. Validated by the backend at load time.
+version: 1
+defaults:
+  max_attempts: 3
+  timeout_minutes: 45
+
+steps:
+  - id: plan
+    agent: forge-planner
+    model: opus
+    settings: steps/planner.settings.json
+    exit: { requires: [plan.md, test-plan.md], every_ac_has_tc: true }
+
+  - id: design
+    agent: forge-designer
+    model: opus
+    settings: steps/designer.settings.json
+    exit: { requires: [design.md] }
+
+  - id: development
+    agent: forge-developer
+    model: { default: sonnet, L: opus }
+    settings: steps/developer.settings.json
+    exit: { requires: [dev-notes.md], command: make check }
+
+  - id: security
+    agent: forge-security
+    model: opus
+    settings: steps/security.settings.json
+    exit: { requires: [security-report.md], max_severity: medium }
+    on_fail: { goto: development, max_attempts: 3 }
+
+  - id: e2e
+    agent: forge-tester
+    model: sonnet
+    settings: steps/tester.settings.json
+    exit: { requires: [test-report.md, evidence/manifest.json], all_cases_pass: true }
+    on_fail: { goto: development, max_attempts: 3 }
+
+  - id: pr
+    agent: forge-pr
+    model: sonnet
+    settings: steps/pr.settings.json
+    exit: { requires: [pr.md], pr_created: true }
