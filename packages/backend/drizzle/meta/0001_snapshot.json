@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "f18baea4-2494-4362-ab08-16849f0632e0",
+  "id": "c91e703e-9221-484c-9225-1ba22ebf22e9",
   "prevId": "7fbfce11-7431-406b-8559-5d622b612096",
   "tables": {
     "event": {
@@ -98,6 +98,13 @@
         },
         "branch": {
           "name": "branch",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "base_branch": {
+          "name": "base_branch",
           "type": "text",
           "primaryKey": false,
           "notNull": true,

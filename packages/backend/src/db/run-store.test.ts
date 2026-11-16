@@ -9,6 +9,7 @@ const newRun = (id: string) => ({
   taskId: "TASK-001",
   worktreePath: "/repo/.worktrees/TASK-001",
   branch: "feat/TASK-001",
+  baseBranch: "main",
   currentStep: "plan" as const,
 });
 

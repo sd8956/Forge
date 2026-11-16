@@ -4,6 +4,7 @@ CREATE TABLE `run` (
 	`task_id` text NOT NULL,
 	`worktree_path` text NOT NULL,
 	`branch` text NOT NULL,
+	`base_branch` text NOT NULL,
 	`status` text NOT NULL,
 	`current_step` text NOT NULL,
 	`attempts` text NOT NULL,

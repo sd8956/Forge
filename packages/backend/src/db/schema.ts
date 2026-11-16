@@ -52,6 +52,8 @@ export const runs = sqliteTable(
     taskId: text("task_id").notNull(),
     worktreePath: text("worktree_path").notNull(),
     branch: text("branch").notNull(),
+    /** Branch the task branch starts from and the PR targets. */
+    baseBranch: text("base_branch").notNull(),
     status: text("status", { enum: RUN_STATUSES }).notNull(),
     currentStep: text("current_step", { enum: STEP_KINDS }).notNull(),
     /** Failures per step: the loop counters. */
