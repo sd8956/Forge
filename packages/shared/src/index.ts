@@ -10,6 +10,10 @@ export function isTerminalStepStatus(status: StepStatus): boolean {
   return TERMINAL_STEP_STATUSES.includes(status);
 }
 
+/** Pipeline step kinds the backend knows how to hand off and validate, in pipeline order. */
+export const STEP_KINDS = ["plan", "design", "development", "security", "e2e", "pr"] as const;
+export type StepKind = (typeof STEP_KINDS)[number];
+
 /** Statuses an agent may report through the `report_step` MCP tool. */
 export const REPORT_STATUSES = ["done", "blocked", "failed"] as const;
 export type ReportStatus = (typeof REPORT_STATUSES)[number];
