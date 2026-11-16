@@ -61,8 +61,19 @@ Call `report_step` of the `factory` MCP server with the same `status`, `summary`
 The backend validates the report. If it answers **Report rejected**, fix every listed problem (update
 `output.md` too) and call `report_step` again. After a report is accepted, stop: no more tool calls.
 
+## Tools: what runs without asking a person
+
+Every permission prompt stops the pipeline until a person answers it. To avoid them:
+
+- Write and change files **only** with the Write and Edit tools. Never write files with Bash: no
+  heredocs (`cat > f <<EOF`), no `>`/`>>` redirects, no `python -c`, `node -e` or `sed -i`.
+- Read files with Read, Grep and Glob, not with `cat`, `find` or scripts.
+- Run Bash only for the commands your step needs, one simple command per call, with literal values:
+  no shell variables, no `$(...)`, no `cd` before a command, no pipes into scripts.
+
 ## Never
 
 - Never finish without an accepted `report_step`.
+- Never read or list anything outside the worktree, including `~/.claude`.
 - Never ask questions in the chat. Nobody reads it.
 - Never write outside the worktree.

@@ -11,13 +11,12 @@
       "Bash(ls:*)",
       "Bash(npm install)",
       "Bash(npm ci)",
-      "Bash(make e2e)",
-      "Bash(npx playwright test:*)",
-      "Bash(EVIDENCE_DIR=*)",
       "Bash(make check)",
       "Bash(git add:*)",
       "Bash(git commit:*)",
-      "Bash(git rev-parse:*)"
+      "Bash(git rev-parse:*)",
+      "Bash(make e2e:*)",
+      "Bash(npx playwright test:*)"
     ],
     "deny": [
       "Bash(git push --force:*)",

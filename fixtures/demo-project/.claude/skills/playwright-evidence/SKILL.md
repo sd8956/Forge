@@ -24,8 +24,10 @@ description: How the Forge e2e step turns test cases into committed Playwright s
 ## Run
 
 ```bash
-EVIDENCE_DIR=<out>/evidence npx playwright test
+make e2e EVIDENCE_DIR=<out>/evidence
 ```
+
+Type the output directory literally (from `input.md`).
 
 This writes screenshots under `<out>/evidence/<TC-id>/`, video and trace under
 `<out>/evidence/playwright/`, and `<out>/evidence/results.json`.

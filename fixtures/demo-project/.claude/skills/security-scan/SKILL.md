@@ -10,21 +10,26 @@ in your output directory (`<out>` below) and cite it in the report.
 
 ## 1. Deterministic tools (always, in this order)
 
+Use the literal **base commit** and output directory from `input.md`. Write each command with those
+values typed in: no shell variables, no `$(...)`, no `cd`, no pipes. Commands built that way need no
+permission prompt; anything else stops the pipeline until a person answers.
+
 ```bash
-BASE=$(git merge-base HEAD <base-branch>)
-semgrep scan --config p/default --metrics off --baseline-commit "$BASE" --json --output <out>/semgrep.json --quiet .
-gitleaks git --log-opts="$BASE..HEAD" --report-format json --report-path <out>/gitleaks.json --redact .
-osv-scanner scan source -r --format json --output-file <out>/osv.json .
+semgrep scan --config p/default --metrics off --baseline-commit <base-commit> --json --output <out>/semgrep.json --quiet .
+gitleaks git --log-opts=<base-commit>..HEAD --report-format json --report-path <out>/gitleaks.json --redact .
+osv-scanner scan source --lockfile package-lock.json --format json --output-file <out>/osv.json
 ```
 
 - gitleaks exits 1 when it finds leaks; that is a result, not an error.
-- osv-scanner exits 1 when it finds vulnerabilities, and 128 with `No package sources found` when the repo
-  has no lockfile: record "no dependencies scanned".
+- osv-scanner exits 1 when it finds vulnerabilities. Pass the lockfile explicitly: a task worktree lives
+  under an ignored folder, so a recursive scan (`-r .`) finds nothing. If the project has no lockfile,
+  record "no dependencies scanned".
 - If a tool cannot run at all (missing, no network for Semgrep rules), report `blocked` and say which.
+- Read the JSON reports with the Read tool, not with scripts.
 
 ## 2. Review
 
-1. Read `git diff $BASE..HEAD` in full.
+1. Read `git diff <base-commit>..HEAD` in full.
 2. For every tool finding, decide **confirmed** or **discarded** with a one-line reason. Discard only with
    evidence (test file, unreachable code, false-positive pattern).
 3. Review the diff yourself against every row of `.factory/threat-model.md` and the OWASP Top 10 (XSS,

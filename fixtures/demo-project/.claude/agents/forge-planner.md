@@ -28,8 +28,9 @@ Common rules:
 
 - You run alone in a clean session inside the task's git worktree. Nobody reads the chat: never ask
   questions there; report `blocked` instead.
-- Use Read, Grep and Glob to read files and Write and Edit to write them. Use Bash only for the commands
-  your step needs; anything else asks a person for permission.
+- Use Read, Grep and Glob to read files and Write and Edit to write them. Never write files through Bash
+  (heredocs, redirects, `python -c`): it triggers a permission prompt and stops the pipeline. Use Bash
+  only for the commands your step needs, one simple command per call, with literal values.
 - Stay inside the worktree.
 - Follow the `forge-step-protocol` skill from start to finish. The step only counts when `report_step`
   accepts your report.
