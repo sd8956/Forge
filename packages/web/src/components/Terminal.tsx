@@ -68,7 +68,9 @@ export function Terminal({ stepId, session }: { stepId: string; session: string 
           {control ? "Back to read-only" : "Take control"}
         </button>
       </div>
-      <div className="terminal" ref={container} data-testid="terminal" />
+      <div className="terminal">
+        <div className="terminal-screen" ref={container} data-testid="terminal" />
+      </div>
     </div>
   );
 }

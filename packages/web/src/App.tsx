@@ -17,6 +17,36 @@ function useHashRoute(): string {
 
 const PROJECT_KEY = "forge.project";
 
+/** Registers a repository that has a `.factory/` folder. */
+function AddProject({ onAdded }: { onAdded: (project: Project) => void }) {
+  const [path, setPath] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  return (
+    <form
+      className="card notice"
+      onSubmit={(e) => {
+        e.preventDefault();
+        setError(null);
+        void api.addProject(path.trim()).then(onAdded, (err: unknown) => setError(err instanceof Error ? err.message : String(err)));
+      }}
+    >
+      <h2>Add a project</h2>
+      <p className="muted">The absolute path of a git repository with a <span className="mono">.factory/</span> folder.</p>
+      <label className="sr-only" htmlFor="project-path">Repository path</label>
+      <input
+        id="project-path"
+        className="mono"
+        value={path}
+        onChange={(e) => setPath(e.target.value)}
+        placeholder="/home/me/code/my-app"
+        style={{ width: "100%", height: "var(--control-height)", padding: "0 12px", borderRadius: "var(--radius-sm)", border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text)", marginBottom: 12 }}
+      />
+      {error ? <p role="alert" className="small" style={{ color: "var(--st-failed-fg)" }}>{error}</p> : null}
+      <button type="submit" className="btn primary" disabled={!path.trim()}>Add project</button>
+    </form>
+  );
+}
+
 export function App() {
   const route = useHashRoute();
   const [projects, setProjects] = useState<Project[] | null>(null);
@@ -96,10 +126,10 @@ export function App() {
         ) : project ? (
           <Board project={project} runs={runs} backlog={backlog} now={now} onChanged={refresh} />
         ) : projects ? (
-          <div className="card notice">
-            <h2>No project yet</h2>
-            <p className="muted">Start a run from the CLI (<span className="mono">pnpm forge run-task --project &lt;path&gt; --task TASK-001</span>) or register one with <span className="mono">POST /projects</span>.</p>
-          </div>
+          <AddProject onAdded={(p) => {
+            setProjectId(p.id);
+            refresh();
+          }} />
         ) : (
           <p className="muted">Loading…</p>
         )}

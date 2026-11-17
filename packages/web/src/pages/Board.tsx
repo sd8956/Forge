@@ -51,11 +51,8 @@ export function Board({ project, runs, backlog, now, onChanged }: { project: Pro
   const merged = new Set(shown.filter((r) => r.status === "done").map((r) => r.taskId));
   const notStarted = backlog.filter((t) => !latestPerTask.has(t.id) || ["failed", "cancelled"].includes(latestPerTask.get(t.id)?.status ?? ""));
 
-  const columns = [
-    ...STEP_COLUMNS.map((id) => ({ id, label: STEP_LABELS[id] ?? id })),
-    { id: "awaiting_review", label: "Awaiting review" },
-    { id: "done", label: "Done" },
-  ];
+  const columns = STEP_COLUMNS.map((id) => ({ id, label: STEP_LABELS[id] ?? id }));
+  const prRuns = shown.filter((r) => ["awaiting_review", "done"].includes(columnOf(r)));
 
   const launch = async (taskId: string) => {
     setError(null);
@@ -100,6 +97,25 @@ export function Board({ project, runs, backlog, now, onChanged }: { project: Pro
           );
         })}
       </div>
+
+      <section className="card panel" aria-label="Pull requests" style={{ marginBottom: 18 }}>
+        <div className="page-header" style={{ marginBottom: 8 }}>
+          <h2>Pull requests</h2>
+          <span className="muted small">New review comments from allowed authors start a review round</span>
+        </div>
+        {prRuns.length === 0 ? <p className="muted">No pull request yet.</p> : null}
+        {prRuns.map((run) => {
+          const status = runStatus(run.status);
+          return (
+            <a key={run.id} className="list-row" href={`#/runs/${run.id}`} data-testid={`run-card-${run.taskId}`} style={{ color: "inherit", textDecoration: "none" }}>
+              <span className="mono small muted">{run.taskId}</span>
+              <span>{tasks.get(run.taskId)?.title ?? run.taskId}</span>
+              <span className="small muted">{run.prUrl ? `PR #${run.prNumber ?? ""}` : ""}{run.reviewRound ? ` · review round ${run.reviewRound}` : ""}</span>
+              <Badge tone={status.tone} label={status.label} />
+            </a>
+          );
+        })}
+      </section>
 
       <div className="card panel">
         <div className="page-header" style={{ marginBottom: 8 }}>

@@ -54,7 +54,9 @@ describe("Board", () => {
     expect(within(development).getByText("Add and list todos")).toBeTruthy();
     expect(within(development).getByText("Needs attention")).toBeTruthy();
     expect(within(development).getByText(/2 prompts/)).toBeTruthy();
-    expect(within(screen.getByRole("region", { name: "Awaiting review" })).getByText("PR #4")).toBeTruthy();
+    const prs = within(screen.getByRole("region", { name: "Pull requests" }));
+    expect(prs.getByText("PR #4")).toBeTruthy();
+    expect(prs.getByText("Awaiting review")).toBeTruthy();
     expect(screen.getByText("Need attention").parentElement?.textContent).toContain("1");
   });
 

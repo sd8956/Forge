@@ -16,6 +16,7 @@ import { isLocalHost, isLocalOrigin, type LoginCodes, readCookie, SESSION_COOKIE
 import { registerPanelRoutes } from "./panel-routes.js";
 import { registerWsRoutes } from "./ws-routes.js";
 import { runEvidence } from "./evidence.js";
+import { listBacklog } from "../projects/project-config.js";
 import { join } from "node:path";
 import type { EventBus } from "../events/event-bus.js";
 
@@ -212,7 +213,8 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
       handled: handledByStepId !== null,
       body: body.slice(0, 2000),
     }));
-    return { ...toRunView(run), steps: deps.runs.steps(run.id).map(toStepView), events: deps.store.events(run.id), memories, prThreads };
+    const task = listBacklog(run.projectPath).find((t) => t.id === run.taskId) ?? null;
+    return { ...toRunView(run), task, steps: deps.runs.steps(run.id).map(toStepView), events: deps.store.events(run.id), memories, prThreads };
   });
 
   app.post("/runs/:runId/resume", async (request, reply) => {

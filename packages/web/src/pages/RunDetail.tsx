@@ -143,10 +143,18 @@ export function RunDetail({ id, now }: { id: string; now: number }) {
           <div className="mono small muted" style={{ display: "flex", gap: 10, alignItems: "center" }}>
             {run.taskId} · {run.branch} <Badge tone={status.tone} label={run.exitReason ? `${status.label} · ${run.exitReason}` : status.label} />
           </div>
-          <h1 style={{ marginTop: 6 }}>{run.taskId}</h1>
+          <h1 style={{ marginTop: 6 }}>{run.task?.title ?? run.taskId}</h1>
           <div className="muted">
-            {run.mode === "review" ? `Review round ${run.reviewRound} · ` : ""}
-            {run.prUrl ? <a href={run.prUrl} target="_blank" rel="noreferrer">PR #{run.prNumber}</a> : "No PR yet"}
+            {[
+              run.task?.covers.length ? `Covers ${run.task.covers.join(", ")}` : null,
+              run.task?.size ? `size ${run.task.size}` : null,
+              run.mode === "review" ? `review round ${run.reviewRound}` : null,
+              Object.values(run.attempts).some((n) => n) ? `failures ${Object.entries(run.attempts).filter(([, n]) => n).map(([k, n]) => `${STEP_LABELS[k] ?? k} ${n}`).join(", ")}` : null,
+            ]
+              .filter(Boolean)
+              .join(" · ")}
+            {" · "}
+            {run.prUrl ? <a href={run.prUrl} target="_blank" rel="noreferrer">PR #{run.prNumber}</a> : "no PR yet"}
           </div>
         </div>
         <div className="actions">

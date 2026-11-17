@@ -7,6 +7,7 @@ export interface RunSummary extends RunView {
 }
 
 export interface RunDetail extends RunView {
+  task: { id: string; title: string; size: string | null; covers: string[]; dependsOn: string[] } | null;
   steps: StepView[];
   memories: { available: boolean; error?: string; items: { id: number; title: string; ref: string | null }[] };
   prThreads: { id: string; kind: string; author: string | null; path: string | null; line: number | null; url: string | null; handled: boolean; body: string }[];
@@ -49,6 +50,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 
 export const api = {
   projects: () => request<Project[]>("/projects"),
+  addProject: (path: string) => request<Project>("/projects", { method: "POST", body: JSON.stringify({ path }) }),
   backlog: (projectId: string) => request<BacklogTask[]>(`/projects/${projectId}/backlog`),
   runs: () => request<RunSummary[]>("/runs"),
   run: (id: string) => request<RunDetail>(`/runs/${id}`),
