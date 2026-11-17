@@ -13,7 +13,7 @@ interface Settings {
 }
 
 const pipeline = loadPipeline(FIXTURE);
-const steps = pipeline.steps.map((step) => {
+const steps = [...pipeline.steps, ...(pipeline.review ? [pipeline.review.fix] : [])].map((step) => {
   const settings = JSON.parse(readFileSync(join(FIXTURE, ".factory", step.settings), "utf8")) as Settings;
   const agent = readFileSync(join(FIXTURE, ".claude", "agents", `${step.agent}.md`), "utf8");
   const frontmatter = parse(/^---\n([\s\S]*?)\n---/.exec(agent)?.[1] ?? "") as { tools: string; skills: string[] };
@@ -21,6 +21,14 @@ const steps = pipeline.steps.map((step) => {
 });
 
 describe("demo-project fixture contract", () => {
+  it("defines the review loop and who may trigger it", () => {
+    expect(pipeline.review).toMatchObject({ max_rounds: 3, fix: { id: "review_fix", agent: "forge-review-fixer" }, then: ["security", "e2e", "pr"] });
+  });
+
+  it.each(steps.map((s) => [s.step.id, s] as const))("%s: can never merge a PR", (_id, { settings }) => {
+    expect(settings.permissions.deny).toEqual(expect.arrayContaining(["Bash(gh pr merge:*)", "Bash(gh api -X PUT:*)"]));
+  });
+
   it.each(steps.map((s) => [s.step.id, s] as const))("%s: sees and calls the factory and Engram MCP tools without a prompt", (_id, { settings, frontmatter }) => {
     expect(frontmatter.tools.split(",").map((t) => t.trim())).toEqual(expect.arrayContaining(["mcp__factory", "mcp__engram"]));
     expect(settings.permissions.allow).toEqual(expect.arrayContaining(["mcp__factory", "mcp__engram"]));

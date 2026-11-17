@@ -56,7 +56,7 @@ function trace(type, data = {}) {
 const inputPath = positionals[0]?.match(/Read (\S+) and run the step/)?.[1];
 const input = inputPath && existsSync(inputPath) ? readFileSync(inputPath, "utf8") : "";
 const field = (name) => new RegExp(`^- ${name}: \`?([^\`\\n]+)\`?`, "m").exec(input)?.[1];
-const kind = /^- Step: `([a-z0-9-]+)`/m.exec(input)?.[1] ?? "unknown";
+const kind = /^- Step: `([a-z0-9_-]+)`/m.exec(input)?.[1] ?? "unknown";
 const attempt = Number(field("Attempt") ?? 1);
 const outputDir = field("Output directory");
 const taskId = /^# Step input: \S+ — (TASK-\d+)/m.exec(input)?.[1];
@@ -132,6 +132,23 @@ function produce(status) {
       out("pr.md", "## Summary\nFake PR.\n");
       Object.assign(extras, { pr_url: "https://github.com/example/demo-project/pull/7", pr_number: 7 });
       break;
+    case "review_fix": {
+      const threads = [...input.matchAll(/^### `([^`]+)`/gm)].map((m) => m[1]);
+      const prNumber = /already has PR #(\d+)/.exec(input)?.[1];
+      const answered = threads.map((id) => {
+        const reply = `Fake fix for ${id}. <!-- forge:reply -->`;
+        const commentId = /^review_comment:(\d+)$/.exec(id)?.[1];
+        if (commentId && prNumber && process.env.FAKE_GH_BIN) {
+          execFileSync(process.env.FAKE_GH_BIN, ["api", "-X", "POST", `repos/o/r/pulls/${prNumber}/comments/${commentId}/replies`, "-f", `body=${reply}`]);
+        }
+        return { id, action: "fixed", reply };
+      });
+      out("replies.md", `# Replies\n${answered.map((t) => `- ${t.id}: ${t.reply}`).join("\n")}\n`);
+      execFileSync("git", ["-c", "user.name=fake", "-c", "user.email=fake@example.invalid", "commit", "-q", "--allow-empty", "-m", `fix: address review attempt ${attempt}`]);
+      Object.assign(extras, { threads: answered, commits: [execFileSync("git", ["rev-parse", "--short", "HEAD"], { encoding: "utf8" }).trim()] });
+      trace("review_fix", { threads, prNumber });
+      break;
+    }
   }
   const outputMd = join(outputDir, "output.md");
   const artifacts = [outputMd, ...files];
