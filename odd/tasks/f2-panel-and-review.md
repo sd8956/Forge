@@ -27,16 +27,18 @@ Objective: operate runs from the browser and close the PR loop (comment → fix 
 
 | ID | Specs | Route | Status | Commit |
 | --- | --- | --- | --- | --- |
-| T1 | S1, S4 | inline | pending | |
-| T2 | S2 | inline | pending | |
-| T3 | S5 | inline | pending | |
-| T4 | S6, S7 | inline | pending | |
-| T5 | S8 | inline | pending | |
-| T6 | S9 | inline | pending | |
-| T7 | S3 | inline | pending | |
-| T8 | S10 | inline | pending | |
+| T1 | S1, S4 | inline | done | f3ed630 |
+| T2 | S2 | inline | done | 4ccaf39 |
+| T3 | S5 | inline | done | b0ed9d9 |
+| T4 | S6, S7 | inline | done | 3d2256f, b0ed9d9 |
+| T5 | S8 | inline | done | 1f38562 |
+| T6 | S9 | inline | done | 081fd71, 2ee7a05, b0e9b23 |
+| T7 | S3 | inline | done | cf4412b |
+| T8 | S10 | inline | done | f9dbd60, eeb3d60, b48bac1 |
 | T9 | S10, S11, S12 | inline | pending | |
 
 ## Log
 
 - L1 (2026-11-17) User: "si proponlo tu" → plan proposed; L2 User: "Si apruebo el plan" (includes S12 sandbox actions).
+- L3 (2026-11-17) T1–T8 done: 261 unit/integration tests and 7 Playwright panel tests green (4 consecutive runs). Found and fixed: refused WebSocket upgrades kept sockets open and blocked shutdown; onPrMerged marked done before cleanup; fake gh overwrote test edits (harness race); wait margins too tight under load. Panel UX from screenshots: Add-project form for an empty backend, task titles in the run detail, PRs listed apart from the step board.
+- Next: T9 real runs (sandbox CI workflow, TASK-003 health endpoint via panel, review fix on sandbox PR #1 from a user comment).
