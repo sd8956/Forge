@@ -13,6 +13,8 @@ import type { StepStore } from "../db/step-store.js";
 import { nextStage, stageAgent, stageKind, stageOfKind } from "../domain/definition.js";
 import { prototypeScreens, validateStage, type FactoryFiles } from "../domain/definition-validators.js";
 import { isTrusted } from "../runs/trust.js";
+import type { GitHubClient } from "../github/github-client.js";
+import { BaseSync } from "../runs/base-sync.js";
 import type { StepService } from "../steps/step-service.js";
 import { renderStageInput } from "./stage-input.js";
 import { copyTemplate, renameMemoryProject } from "./template.js";
@@ -24,6 +26,7 @@ export class DefinitionError extends Error {}
 
 interface Deps {
   config: ForgeConfig;
+  github?: GitHubClient;
   store: DefinitionStore;
   steps: StepService;
   stepStore: StepStore;
@@ -264,8 +267,12 @@ export class DefinitionService {
 
   view(projectId: string): DefinitionView {
     const def = this.mustGet(projectId);
-    const files = Object.keys(readFactory(def.worktreePath)).sort();
+    const root = this.root(def);
+    const files = Object.keys(readFactory(root)).sort();
+    const fileVersions = Object.fromEntries(files.map((f) => [f, Math.floor(statSync(join(root, f)).mtimeMs)]));
     return {
+      fileVersions,
+      mergedAt: def.mergedAt,
       projectId,
       repoPath: def.repoPath,
       worktreePath: def.worktreePath,
@@ -291,8 +298,9 @@ export class DefinitionService {
   /** A file of the definition worktree, only under `.factory/` (never handoffs or settings). */
   filePath(projectId: string, path: string): string | null {
     const def = this.mustGet(projectId);
-    const root = join(def.worktreePath, ".factory");
-    const full = resolve(def.worktreePath, path);
+    const base = this.root(def);
+    const root = join(base, ".factory");
+    const full = resolve(base, path);
     const rel = relative(root, full);
     if (rel.startsWith("..") || isAbsolute(rel) || rel.startsWith("runs") || rel.startsWith("steps")) return null;
     return existsSync(full) && statSync(full).isFile() ? full : null;
@@ -306,7 +314,65 @@ export class DefinitionService {
     return this.deps.store.list().map((d) => ({ projectId: d.projectId, repoPath: d.repoPath, prUrl: d.prUrl }));
   }
 
+  // ------------------------------------------------------------ PR merge
+
+  private timer: NodeJS.Timeout | undefined;
+  private watching: Promise<void> | undefined;
+  private readonly baseSync = new BaseSync(0);
+
+  /** Polls open definition PRs; a merge updates the clone, so the backlog is ready to plan. */
+  startWatching(intervalMs: number): void {
+    if (this.timer || !this.deps.github) return;
+    this.timer = setInterval(() => {
+      this.watching ??= this.checkMerges().finally(() => (this.watching = undefined));
+    }, intervalMs);
+    this.timer.unref();
+  }
+
+  async stopWatching(): Promise<void> {
+    if (this.timer) clearInterval(this.timer);
+    this.timer = undefined;
+    await this.watching;
+  }
+
+  async checkMerges(): Promise<void> {
+    for (const def of this.deps.store.list().filter((d) => d.prUrl && !d.mergedAt)) {
+      const match = /github\.com\/([^/]+\/[^/]+)\/pull\/(\d+)/.exec(def.prUrl ?? "");
+      if (!match || !this.deps.github) continue;
+      try {
+        const snapshot = await this.deps.github.snapshot(match[1]!, Number(match[2]));
+        if (snapshot.state === "MERGED") await this.onMerged(def);
+      } catch (error) {
+        this.deps.store.recordEvent(def.projectId, "definition_watch_error", { error: String(error).slice(0, 300) });
+      }
+    }
+  }
+
+  /** Pull the merged definition into the clone, drop the worktree and refresh the project. */
+  private async onMerged(def: DefinitionRow): Promise<void> {
+    const base = (await this.git(def.repoPath, ["rev-parse", "--abbrev-ref", "HEAD"]).catch(() => "main")).trim();
+    const synced = await this.baseSync.sync(def.repoPath, base);
+    if (synced.status === "blocked" || synced.status === "no_remote") {
+      const why = synced.status === "blocked" ? synced.why : "the clone has no origin remote";
+      this.deps.store.recordEvent(def.projectId, "definition_pull_blocked", { why });
+      return;
+    }
+    if (!existsSync(join(def.repoPath, ".factory", "project.yaml"))) {
+      this.deps.store.recordEvent(def.projectId, "definition_pull_blocked", { why: `${base} has no .factory/project.yaml after the pull` });
+      return;
+    }
+    await this.git(def.repoPath, ["worktree", "remove", "--force", def.worktreePath]).catch(() => undefined);
+    this.deps.projects.upsert(def.repoPath);
+    this.deps.store.setMerged(def.projectId);
+    this.deps.store.recordEvent(def.projectId, "definition_merged", { base, prUrl: def.prUrl });
+  }
+
   // -------------------------------------------------------------- internals
+
+  /** Where the definition lives: the worktree while it is being written, the clone once merged. */
+  private root(def: DefinitionRow): string {
+    return def.mergedAt ? def.repoPath : def.worktreePath;
+  }
 
   private ensureTurn(projectId: string, stage: DefinitionStage): void {
     const index = DEFINITION_STAGES.indexOf(stage);

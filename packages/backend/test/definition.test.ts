@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { DefinitionView } from "@forge/shared";
 import { afterEach, describe, expect, it } from "vitest";
@@ -71,6 +71,8 @@ describe("project definition with fake claude", () => {
     for (const stage of ["intake", "requirements", "architecture", "test_strategy", "design", "backlog"]) {
       const inReview = await waitStage(ctx, id, stage, "in_review");
       expect(stageOf(inReview, stage).summary).toBe(summaries[stage]);
+      // Every file carries a version, so the panel reloads a document or a screen when a session rewrites it.
+      expect(Object.keys(inReview.fileVersions).sort()).toEqual([...inReview.files].sort());
       // Nothing moves on until the person decides.
       const next = inReview.stages[inReview.stages.findIndex((s) => s.stage === stage) + 1];
       if (next) expect(next.status).toBe("pending");
@@ -101,8 +103,26 @@ describe("project definition with fake claude", () => {
       "docs(definition): approve the requirements",
       "docs(definition): approve the intake",
     ]);
+    // The person merges the PR on GitHub: the watcher pulls main into the clone and drops the worktree.
+    execFileSync("git", ["-C", ctx.origin, "update-ref", "refs/heads/main", "refs/heads/forge/definition"]);
+    const prNumber = done.prUrl!.split("/").at(-1)!;
+    const state = JSON.parse(readFileSync(ctx.ghState, "utf8")) as { prs: Record<string, { state: string }> };
+    state.prs[prNumber]!.state = "MERGED";
+    writeFileSync(ctx.ghState, JSON.stringify(state));
+    const merged = await waitFor(async () => {
+      const v = await view(ctx, id);
+      return v.mergedAt ? v : undefined;
+    }, "the definition merge");
+    expect(ctx.git("log", "-1", "--format=%s")).toBe("docs(definition): approve the backlog\n");
+    expect(readFileSync(join(ctx.repo, ".factory", "backlog", "TASK-001.md"), "utf8")).toContain("# TASK-001");
+    expect(existsSync(done.worktreePath)).toBe(false);
+    expect(merged.files).toContain(".factory/requirements.md");
+    expect(((await ctx.api().request("GET", "/projects")).body as { id: string; name: string }[]).find((p) => p.id === id)?.name).toBe("shortener");
+    const served = await fetch(`${ctx.api().url}/projects/${id}/definition/files/requirements.md`, { headers: { "x-forge-token": ctx.api().token } });
+    expect(served.status).toBe(200);
+
     // The agents' memory points at the project name decided at intake.
-    expect(readFileSync(join(done.worktreePath, ".claude", "agents", "forge-planner.md"), "utf8")).toContain('"--project", "shortener"');
+    expect(readFileSync(join(ctx.repo, ".claude", "agents", "forge-planner.md"), "utf8")).toContain('"--project", "shortener"');
     // Every stage ran as its own agent, in the definition worktree, reporting with report_stage.
     const reports = readTrace(ctx.root).filter((t) => t.type === "report_step");
     expect(reports.map((r) => r.kind)).toEqual(["def_intake", "def_requirements", "def_architecture", "def_test_strategy", "def_design", "def_backlog"]);
@@ -149,6 +169,7 @@ describe("project definition with fake claude", () => {
     expect(stageOf(again, "requirements").stepId).not.toBe(firstStep);
     expect(stageOf(again, "intake")).toMatchObject({ status: "approved" });
     expect(readFileSync(join(again.worktreePath, ".factory", "requirements.md"), "utf8")).toContain("Changed after review: Add a requirement for expiring links");
+    expect(again.fileVersions[".factory/requirements.md"]).toBeGreaterThan(review.fileVersions[".factory/requirements.md"]!);
     // The relaunched session saw the request and its earlier report.
     const input = readFileSync(join(again.worktreePath, ".factory", "runs", `DEF-${id.slice(0, 8)}`, "def_requirements", "2", "input.md"), "utf8");
     expect(input).toContain("## Changes the person asked for");

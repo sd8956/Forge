@@ -167,6 +167,8 @@ export const definitions = sqliteTable("definition", {
   branch: text("branch").notNull(),
   idea: text("idea").notNull(),
   prUrl: text("pr_url"),
+  /** When the definition PR merged and the base branch was pulled. */
+  mergedAt: integer("merged_at"),
   createdAt: integer("created_at").notNull(),
 });
 

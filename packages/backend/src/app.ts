@@ -88,14 +88,15 @@ export async function startBackend(config: ForgeConfig, opts: { logger?: boolean
   schedulerRef.current = queue;
   const orchestrator = new OrchestratorService({ config, tmux, plans, token, url: () => url });
   const definitionStore = new DefinitionStore(db, Date.now, (event) => bus.publish(event));
-  const definition = new DefinitionService({ config, store: definitionStore, steps: service, stepStore: store, projects, log });
+  const github = opts.github ?? new GhCliClient(config.ghBin);
+  const definition = new DefinitionService({ config, store: definitionStore, steps: service, stepStore: store, projects, github, log });
   service.policy = routeStepPolicy(runService, definition);
   service.onRateLimit = (step) => queue.onRateLimit(step.id);
   const watcher = new PrWatcher({
     runs,
     threads,
     projects,
-    github: opts.github ?? new GhCliClient(config.ghBin),
+    github,
     runService,
     onFeedback: () => queue.tick(),
     intervalMs: config.prPollIntervalMs,
@@ -137,6 +138,7 @@ export async function startBackend(config: ForgeConfig, opts: { logger?: boolean
   url = baseUrl({ host: config.host, port });
   await runService.reconcile();
   definition.reconcile();
+  definition.startWatching(config.prPollIntervalMs);
   service.startSweeper();
   watcher.start();
   queue.start();
@@ -164,6 +166,7 @@ export async function startBackend(config: ForgeConfig, opts: { logger?: boolean
     close: async () => {
       unsubscribe();
       await queue.stop();
+      await definition.stopWatching();
       await watcher.stop();
       await app.close();
       await service.shutdown();

@@ -17,7 +17,7 @@ export class DefinitionStore {
     private readonly onEvent: (event: EventRow) => void = () => undefined,
   ) {}
 
-  create(row: Omit<DefinitionRow, "createdAt" | "prUrl">): DefinitionRow {
+  create(row: Omit<DefinitionRow, "createdAt" | "prUrl" | "mergedAt">): DefinitionRow {
     return this.db.transaction((tx) => {
       const created = tx.insert(definitions).values({ ...row, prUrl: null, createdAt: this.now() }).returning().get();
       for (const stage of DEFINITION_STAGES) {
@@ -37,6 +37,10 @@ export class DefinitionStore {
 
   setPrUrl(projectId: string, prUrl: string): void {
     this.db.update(definitions).set({ prUrl }).where(eq(definitions.projectId, projectId)).run();
+  }
+
+  setMerged(projectId: string): void {
+    this.db.update(definitions).set({ mergedAt: this.now() }).where(eq(definitions.projectId, projectId)).run();
   }
 
   stages(projectId: string): DefinitionStageRow[] {

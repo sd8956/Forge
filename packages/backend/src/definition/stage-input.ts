@@ -61,7 +61,7 @@ export const STAGE_CONTRACTS: Readonly<Record<DefinitionStage, StageContract>> =
     writes: [
       { path: ".factory/design/tokens.json", description: "Design tokens as a JSON object (color, typography, spacing, radius)." },
       { path: ".factory/design/components.md", description: "Component inventory: name, states, which screens use it." },
-      { path: ".factory/prototype/<screen>.html", description: "One self-contained HTML file per screen (inline CSS and JS, fake data, no external requests). The person approves them one by one." },
+      { path: ".factory/prototype/<screen>.html", description: "One self-contained HTML file per screen (inline CSS and JS, fake data, no external requests) that lays out well from 360 px to 1440 px wide. The person approves them one by one." },
     ],
   },
   backlog: {

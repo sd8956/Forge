@@ -1,0 +1,1 @@
+ALTER TABLE `definition` ADD `merged_at` integer;

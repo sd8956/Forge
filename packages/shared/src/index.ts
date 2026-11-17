@@ -243,6 +243,10 @@ export interface DefinitionView {
   stages: DefinitionStageView[];
   /** Files under .factory/ in the definition worktree (relative paths). */
   files: string[];
+  /** Modification time of each file, so the panel reloads what a session rewrote. */
+  fileVersions: Record<string, number>;
+  /** Set once the definition PR merged and the clone was updated. */
+  mergedAt: number | null;
   prototypeScreens: string[];
 }
 
