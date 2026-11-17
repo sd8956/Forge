@@ -36,6 +36,20 @@
 - **Restarts.** A queued task whose run already exists (the backend stopped between inserting the run and linking it)
   is linked, not launched again.
 
+- **Usage limits from hooks, not the screen.** Every rendered step settings file gets, whatever its template says,
+  a `StopFailure` HTTP hook and a `statusLine` (Forge infrastructure, like the MCP config). Verified on 2.1.322: the
+  `StopFailure` input carries `error` (`rate_limit`, `model_not_found`, ...) and `last_assistant_message`; the status
+  line input carries `rate_limits.five_hour/seven_day.{used_percentage, resets_at}`. The status line script reads the
+  backend URL and token from a private file next to the settings, so the token is never in a command line, and posts
+  only when the window changes.
+- **Rate limit.** `StopFailure` with `rate_limit` pauses the queue (`source: rate_limit`, until the known 5-hour
+  reset) before the step closes as `rate_limited`. That outcome relaunches the same step without counting an attempt
+  and without failure context. Other API errors move the step to `needs_human`.
+- **A pause holds every pipeline.** While the queue is paused (by a person or by a usage limit), no step launches:
+  the run records `launch_held` and keeps its slot, and the scheduler advances it again when the pause lifts. The
+  usage threshold (`FORGE_USAGE_PAUSE_PERCENT`, default 90) only stops new tasks and review rounds. A person's pause
+  is never replaced by an automatic one.
+
 ## Consequences
 
 - `task` from the definition's data model is not created; its `depends_on` and status live in the backlog files,

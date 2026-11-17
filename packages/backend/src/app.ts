@@ -64,17 +64,30 @@ export async function startBackend(config: ForgeConfig, opts: { logger?: boolean
   const service = new StepService({ config, store, tmux, token, log, url: () => url });
   const memory = opts.memory ?? new EngramAdapter(config.engramUrl);
   const threads = new PrThreadStore(db);
-  const runService = new RunService({ config, runs, steps: service, threads, memory, memoryProject: memoryProjectFor, log });
+  // The scheduler is created right after; the run service asks it whether launches are on hold.
+  const schedulerRef: { current?: SchedulerService } = {};
+  const runService = new RunService({
+    config,
+    runs,
+    steps: service,
+    threads,
+    memory,
+    memoryProject: memoryProjectFor,
+    log,
+    launchHold: () => schedulerRef.current?.launchHold() ?? null,
+  });
   const projects = new ProjectStore(db);
   const plans = new PlanStore(db, Date.now, (event) => bus.publish(event));
-  const scheduler = new SchedulerService({ config, plans, runs, threads, runService, log });
+  const queue = new SchedulerService({ config, plans, runs, threads, runService, log });
+  schedulerRef.current = queue;
+  service.onRateLimit = (step) => queue.onRateLimit(step.id);
   const watcher = new PrWatcher({
     runs,
     threads,
     projects,
     github: opts.github ?? new GhCliClient(config.ghBin),
     runService,
-    onFeedback: () => scheduler.tick(),
+    onFeedback: () => queue.tick(),
     intervalMs: config.prPollIntervalMs,
     log,
   });
@@ -99,6 +112,7 @@ export async function startBackend(config: ForgeConfig, opts: { logger?: boolean
     webDist: config.webDist,
     archiveDir: (runId) => archiveDirFor(config.home, runId),
     threads,
+    scheduler: queue,
     bus,
     tmuxSocket: config.tmuxSocket,
     logger: opts.logger ?? false,
@@ -110,10 +124,10 @@ export async function startBackend(config: ForgeConfig, opts: { logger?: boolean
   await runService.reconcile();
   service.startSweeper();
   watcher.start();
-  scheduler.start();
+  queue.start();
   // A run that changes status may free a slot or a module.
   const unsubscribe = bus.subscribe((event) => {
-    if (event.entity === "run" && event.type === "transition") void scheduler.tick();
+    if (event.entity === "run" && event.type === "transition") void queue.tick();
   });
 
   return {
@@ -129,10 +143,10 @@ export async function startBackend(config: ForgeConfig, opts: { logger?: boolean
     watcher,
     threads,
     plans,
-    scheduler,
+    scheduler: queue,
     close: async () => {
       unsubscribe();
-      await scheduler.stop();
+      await queue.stop();
       await watcher.stop();
       await app.close();
       await service.shutdown();

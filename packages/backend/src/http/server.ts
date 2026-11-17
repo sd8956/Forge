@@ -1,9 +1,10 @@
 import type { Duplex } from "node:stream";
 import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import { activityHookInput, notificationHookInput, preToolUseHookInput, sessionEndHookInput, startRunRequest, stopHookInput } from "@forge/shared";
+import { activityHookInput, notificationHookInput, preToolUseHookInput, sessionEndHookInput, startRunRequest, stopFailureHookInput, stopHookInput, usageReportInput } from "@forge/shared";
 import { z } from "zod";
 import { TOKEN_HEADER, tokenMatches } from "../auth.js";
+import type { SchedulerService } from "../runs/scheduler-service.js";
 import type { PrThreadStore } from "../db/pr-thread-store.js";
 import type { ProjectStore } from "../db/project-store.js";
 import { DuplicateRunError, toRunView, type RunStore } from "../db/run-store.js";
@@ -37,6 +38,7 @@ interface ServerDeps {
   webDist: string;
   archiveDir: (runId: string) => string;
   threads: PrThreadStore;
+  scheduler: SchedulerService;
   bus: EventBus;
   tmuxSocket: string;
   logger?: boolean;
@@ -129,6 +131,21 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     const parsed = notificationHookInput.safeParse(request.body);
     if (!parsed.success) return badRequest(reply, parsed.error);
     deps.service.onNotification(parsed.data);
+    return reply.code(204).send();
+  });
+
+  app.post("/hooks/stop-failure", async (request, reply) => {
+    const parsed = stopFailureHookInput.safeParse(request.body);
+    if (!parsed.success) return badRequest(reply, parsed.error);
+    await deps.service.onStopFailure(parsed.data);
+    return reply.code(204).send();
+  });
+
+  app.post("/hooks/usage", async (request, reply) => {
+    const parsed = usageReportInput.safeParse(request.body);
+    if (!parsed.success) return badRequest(reply, parsed.error);
+    const window = (w: { used_percentage: number; resets_at: number } | undefined) => (w ? { percent: w.used_percentage, resetsAt: w.resets_at * 1000 } : null);
+    deps.scheduler.recordUsage({ fiveHour: window(parsed.data.rate_limits.five_hour), sevenDay: window(parsed.data.rate_limits.seven_day) });
     return reply.code(204).send();
   });
 

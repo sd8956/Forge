@@ -64,6 +64,22 @@ export const sessionEndHookInput = hookBase.extend({
 });
 export type SessionEndHookInput = z.infer<typeof sessionEndHookInput>;
 
+/** The turn ended on an API error; `error` is the matcher value (rate_limit, server_error, ...). */
+export const stopFailureHookInput = hookBase.extend({
+  hook_event_name: z.literal("StopFailure"),
+  error: z.string().default("unknown"),
+  last_assistant_message: z.string().optional(),
+});
+export type StopFailureHookInput = z.infer<typeof stopFailureHookInput>;
+
+const usageWindow = z.object({ used_percentage: z.number().min(0).max(100), resets_at: z.number().int().positive() });
+/** What Forge's statusLine script forwards from Claude Code's status line input. */
+export const usageReportInput = z.object({
+  session_id: z.string().min(1).optional(),
+  rate_limits: z.looseObject({ five_hour: usageWindow.optional(), seven_day: usageWindow.optional() }),
+});
+export type UsageReportInput = z.infer<typeof usageReportInput>;
+
 export const preToolUseHookInput = hookBase.extend({
   hook_event_name: z.literal("PreToolUse"),
   tool_name: z.string(),

@@ -9,6 +9,7 @@ import {
   type PreToolUseHookInput,
   type ReportStepInput,
   type SessionEndHookInput,
+  type StopFailureHookInput,
   type StepKind,
   type StopHookInput,
 } from "@forge/shared";
@@ -57,6 +58,24 @@ export interface StepLaunchSpec {
  * What a step's owner decides: whether a report is acceptable, what the Stop
  * hook adds to its reminder, and what happens after a status change.
  */
+const STATUS_LINE_SCRIPT = join(import.meta.dirname, "..", "..", "scripts", "forge-statusline.mjs");
+
+/**
+ * Adds what Forge itself needs to every step's settings, whatever the template
+ * says: a StopFailure hook (usage limits and API errors) and a status line
+ * that forwards the usage window. The status line reads the URL and token from
+ * a private file, so the token never appears in a command line.
+ */
+export function withForgeSignals(settings: Record<string, unknown>, url: string, token: string, statusLineConfig: string): Record<string, unknown> {
+  const hooks = { ...((settings.hooks as Record<string, unknown> | undefined) ?? {}) };
+  hooks.StopFailure = [{ hooks: [{ type: "http", url: `${url}/hooks/stop-failure`, headers: { "x-forge-token": token }, timeout: 10 }] }];
+  return {
+    ...settings,
+    hooks,
+    statusLine: { type: "command", command: [process.execPath, STATUS_LINE_SCRIPT, statusLineConfig].map(shellQuote).join(" "), padding: 0 },
+  };
+}
+
 export interface StepPolicy {
   validateReport(step: StepRow, input: ReportStepInput): Promise<{ ok: true } | { ok: false; issues: string[] }>;
   stopCheck(step: StepRow): Promise<string | null>;
@@ -86,6 +105,8 @@ interface Deps {
  */
 export class StepService {
   policy: StepPolicy = NO_POLICY;
+  /** Called after a step stopped on a usage limit; the scheduler pauses the queue. */
+  onRateLimit: (step: StepRow) => void = () => undefined;
   private readonly timers = new Map<string, NodeJS.Timeout>();
   private sweepTimer: NodeJS.Timeout | undefined;
   private readonly pending = new Set<Promise<unknown>>();
@@ -156,8 +177,10 @@ export class StepService {
     const dir = join(this.deps.config.home, "steps", row.id);
     mkdirSync(dir, { recursive: true, mode: 0o700 });
     const url = this.deps.url();
-    const settings = readFileSync(settingsTemplate, "utf8").replaceAll("{{FORGE_URL}}", url).replaceAll("{{FORGE_TOKEN}}", this.deps.token);
-    JSON.parse(settings); // fail early on a broken template
+    const rendered = readFileSync(settingsTemplate, "utf8").replaceAll("{{FORGE_URL}}", url).replaceAll("{{FORGE_TOKEN}}", this.deps.token);
+    const statusLineConfig = join(dir, "statusline.json");
+    writeFileSync(statusLineConfig, JSON.stringify({ url: `${url}/hooks/usage`, token: this.deps.token }), { mode: 0o600 });
+    const settings = JSON.stringify(withForgeSignals(JSON.parse(rendered) as Record<string, unknown>, url, this.deps.token, statusLineConfig), null, 2);
     const mcp = {
       mcpServers: {
         factory: { type: "http", url: `${url}/mcp/${row.id}`, headers: { "x-forge-token": this.deps.token } },
@@ -268,6 +291,26 @@ export class StepService {
     if ((ATTENTION_NOTIFICATION_TYPES as readonly string[]).includes(type) && step.status === "running") {
       this.transition(step.id, "attention", {}, { cause: type, message: input.message ?? null });
     }
+  }
+
+  /**
+   * The turn ended on an API error. A usage limit closes the step without
+   * spending an attempt (the run retries it when the queue resumes); any other
+   * error needs a person.
+   */
+  async onStopFailure(input: StopFailureHookInput): Promise<void> {
+    const step = this.stepForHook(input.session_id, "StopFailure", input);
+    if (!step || isTerminalStepStatus(step.status)) return;
+    if (input.error === "rate_limit") {
+      // Pause first, so the run that reacts to this step's end already sees the queue on hold.
+      this.onRateLimit(step);
+      const result = this.transition(step.id, "rate_limited", { exitReason: "rate_limited" }, { message: input.last_assistant_message ?? null });
+      if (!result.ok) return;
+      this.clearTimeout(step.id);
+      await this.close(step.id, "rate_limited");
+      return;
+    }
+    if (step.status === "running") this.transition(step.id, "attention", {}, { cause: `api_error:${input.error}`, message: input.last_assistant_message ?? null });
   }
 
   onSessionEnd(input: SessionEndHookInput): void {

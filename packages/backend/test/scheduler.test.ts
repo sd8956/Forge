@@ -20,14 +20,14 @@ function addTask(project: string, id: string, dependsOn: string[] = []) {
   writeFileSync(join(project, ".factory", "backlog", `${id}.md`), spec);
 }
 
-async function setup(overrides: Partial<ForgeConfig> = {}) {
+async function setup(overrides: Partial<ForgeConfig> = {}, script: Record<string, string[]> = { plan: ["wait-release"] }, env: Record<string, string> = {}) {
   const root = scratch();
   const project = makeProject(root, { pipeline: PLAN_ONLY_PIPELINE });
   const git = (...args: string[]) => execFileSync("git", ["-C", project, "-c", "user.name=t", "-c", "user.email=t@example.invalid", ...args], { encoding: "utf8" });
   for (const [id, deps] of [["TASK-010", []], ["TASK-011", ["TASK-010"]], ["TASK-012", []], ["TASK-013", []]] as const) addTask(project, id, [...deps]);
   git("add", ".");
   git("commit", "-qm", "backlog");
-  const config = testConfig(root, { extraEnv: fakeEnv(root, { plan: ["wait-release"] }), ...overrides });
+  const config = testConfig(root, { extraEnv: { ...fakeEnv(root, script), ...env }, ...overrides });
   const tmux = new Tmux(config.tmuxSocket);
   const memory = new StubMemory();
   let backend: Backend = await startBackend(config, { memory });
@@ -143,5 +143,41 @@ describe("scheduler with fake claude", () => {
     scheduler.recordUsage({ fiveHour: { percent: 40, resetsAt: Date.now() + 3_600_000 }, sevenDay: null });
     await scheduler.tick();
     await waitFor(async () => (await runsByTask(ctx.api()))["TASK-010"], "TASK-010 to start");
+  });
+
+  it("pauses the whole queue on a usage limit and retries the step without spending an attempt", async () => {
+    const ctx = await setup({ maxConcurrency: 1 }, { plan: ["rate-limit", "done"] }, { FAKE_USAGE_PERCENT: "97" });
+    const { plans, scheduler } = ctx.backend();
+    const plan = plans.propose(ctx.project, "two", [task("TASK-010", 0, ["a"]), task("TASK-012", 0, ["b"])], "test");
+    plans.approve(plan.id);
+    await scheduler.tick();
+    const first = await waitFor(async () => {
+      const id = (await runsByTask(ctx.api()))["TASK-010"]?.id;
+      const run = id ? await ctx.api().run(id) : undefined;
+      return run?.events.some((e) => e.type === "launch_held") ? run : undefined;
+    }, "TASK-010 to be held after the usage limit");
+    expect(first.steps.map((s) => `${s.kind}#${s.attempt}:${s.status}:${s.exitReason}`)).toEqual(["plan#1:failed:rate_limited"]);
+    expect(first).toMatchObject({ status: "running", attempts: {} });
+
+    // The status line reported the window, so the pause lifts by itself when it resets.
+    const usage = scheduler.usage();
+    expect(usage?.fiveHour?.percent).toBe(97);
+    expect(scheduler.pauseState()).toMatchObject({ source: "rate_limit", reason: "Claude usage limit reached", until: usage?.fiveHour?.resetsAt });
+    await scheduler.tick();
+    expect(plans.tasks(plan.id).find((t) => t.taskId === "TASK-012")?.waitReason).toBe("Queue paused: Claude usage limit reached");
+    expect((await runsByTask(ctx.api()))["TASK-012"]).toBeUndefined();
+
+    // A person resumes early (the usage window is also lower now).
+    scheduler.recordUsage({ fiveHour: { percent: 20, resetsAt: Date.now() + 3_600_000 }, sevenDay: null });
+    expect(scheduler.resume()).toBe(true);
+    const done = await ctx.api().waitForRun(first.id, "waiting_review");
+    expect(done.steps.map((s) => `${s.kind}#${s.attempt}:${s.status}`)).toEqual(["plan#1:failed", "plan#2:done"]);
+    expect(done.attempts).toEqual({});
+    // The retried session reported 97% again through the status line, so nothing new starts.
+    await scheduler.tick();
+    expect(plans.tasks(plan.id).find((t) => t.taskId === "TASK-012")?.waitReason).toBe("Usage window at 97% (pause at 90%)");
+    scheduler.recordUsage({ fiveHour: { percent: 20, resetsAt: Date.now() + 3_600_000 }, sevenDay: null });
+    await scheduler.tick();
+    await waitFor(async () => (await runsByTask(ctx.api()))["TASK-012"], "TASK-012 to start once usage is low");
   });
 });

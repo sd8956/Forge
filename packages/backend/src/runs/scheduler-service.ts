@@ -120,6 +120,19 @@ export class SchedulerService {
     return true;
   }
 
+  /** A step stopped on a usage limit: pause everything until the 5-hour window resets (if known). */
+  onRateLimit(stepId: string): void {
+    const resetsAt = this.usage()?.fiveHour?.resetsAt ?? null;
+    this.pause("Claude usage limit reached", "rate_limit", resetsAt);
+    this.deps.plans.recordEvent("queue", "global", "rate_limited", { stepId, until: resetsAt });
+  }
+
+  /** Why step launches are on hold: a paused queue holds every pipeline, not just new tasks. */
+  launchHold(): string | null {
+    const pause = this.pauseState();
+    return pause ? `Queue paused: ${pause.reason}` : null;
+  }
+
   pauseState(): QueuePause | null {
     const pause = this.deps.plans.getSetting<QueuePause>(PAUSE_KEY) ?? null;
     if (pause?.until !== null && pause?.until !== undefined && pause.until <= this.now()) {
@@ -198,6 +211,15 @@ export class SchedulerService {
       }
     }
     if (changed) this.deps.plans.recordEvent("queue", "global", "queue_changed", {});
+
+    // Runs held while the queue was paused continue their pipeline (a held run keeps its slot).
+    if (!this.pauseState()) {
+      for (const run of this.deps.runs.listOpen()) {
+        const latest = this.deps.runs.latestStep(run.id);
+        const held = run.status === "running" && (!latest || ((latest.status === "done" || latest.status === "failed" || latest.status === "blocked") && latest.id === run.lastHandledStepId));
+        if (held && !this.stopped) await this.deps.runService.advance(run.id);
+      }
+    }
 
     for (const runId of decision.reviews) {
       if (this.stopped) return;

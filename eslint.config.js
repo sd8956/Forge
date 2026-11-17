@@ -7,7 +7,7 @@ export default tseslint.config(
   ...tseslint.configs.recommendedTypeChecked,
   {
     languageOptions: {
-      parserOptions: { projectService: { allowDefaultProject: ["*.js", "packages/backend/test/fake-claude/*.mjs", "packages/backend/test/fake-gh/*.mjs"] }, tsconfigRootDir: import.meta.dirname },
+      parserOptions: { projectService: { allowDefaultProject: ["*.js", "packages/backend/test/fake-claude/*.mjs", "packages/backend/test/fake-gh/*.mjs", "packages/backend/scripts/*.mjs"] }, tsconfigRootDir: import.meta.dirname },
     },
     rules: {
       "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_" }],
@@ -17,6 +17,6 @@ export default tseslint.config(
   {
     files: ["**/*.js", "**/*.mjs"],
     ...tseslint.configs.disableTypeChecked,
-    languageOptions: { globals: { process: "readonly", console: "readonly", setTimeout: "readonly", setInterval: "readonly", fetch: "readonly", URL: "readonly" } },
+    languageOptions: { globals: { process: "readonly", console: "readonly", setTimeout: "readonly", setInterval: "readonly", fetch: "readonly", URL: "readonly", AbortSignal: "readonly" } },
   },
 );
