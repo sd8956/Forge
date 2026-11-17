@@ -1,13 +1,20 @@
 #!/usr/bin/env node
-// Fake `claude` binary for integration tests. It reads the same flags the
-// runner passes to the real CLI, sends the hooks from the --settings file over
-// HTTP and calls report_step through the --mcp-config server.
-// FAKE_CLAUDE_SCENARIO picks the behaviour; FAKE_CLAUDE_TRACE logs what it saw.
-import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
+// Fake `claude` for integration tests. It reads the same flags the runner passes to the real CLI,
+// reads the step's input.md, writes a valid (or deliberately broken) output.md and artifacts for
+// that step kind, sends the hooks from --settings over HTTP and calls report_step through the
+// --mcp-config server.
+//
+// FAKE_CLAUDE_SCRIPT: JSON {"<step kind>": ["<behaviour for attempt 1>", "<attempt 2>", ...], "default": "done"}
+// Behaviours: done, failed, blocked, stop-then-report, never-report, permission, wait-release,
+// bad-output-then-fix, exit-without-report, crash, hang.
+// FAKE_CLAUDE_TRACE: JSONL file where the fake logs what it saw.
+import { execFileSync } from "node:child_process";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { parse, stringify } from "yaml";
 
 const VARIADIC = new Set(["--mcp-config"]);
 const WITH_VALUE = new Set(["--agent", "--session-id", "--setting-sources", "--settings", "--mcp-config", "--model", "--permission-mode"]);
@@ -36,16 +43,105 @@ const { flags, positionals } = parseArgv(process.argv.slice(2));
 const sessionId = flags["--session-id"];
 const settings = JSON.parse(readFileSync(flags["--settings"], "utf8"));
 const mcpConfig = JSON.parse(readFileSync(flags["--mcp-config"][0], "utf8"));
-const scenario = process.env.FAKE_CLAUDE_SCENARIO ?? "report";
 const transcriptPath = join(process.env.FAKE_CLAUDE_TRANSCRIPT_DIR ?? tmpdir(), `${sessionId}.jsonl`);
 writeFileSync(transcriptPath, "");
 
 function trace(type, data = {}) {
   const file = process.env.FAKE_CLAUDE_TRACE;
-  if (file) appendFileSync(file, `${JSON.stringify({ type, ...data })}\n`);
+  if (file) appendFileSync(file, `${JSON.stringify({ type, session: sessionId, ...data })}\n`);
 }
 
-trace("started", { agent: flags["--agent"], prompt: positionals[0], settingSources: flags["--setting-sources"], permissionMode: flags["--permission-mode"], scenario });
+// ------------------------------------------------------------------ input.md
+
+const inputPath = positionals[0]?.match(/Read (\S+) and run the step/)?.[1];
+const input = inputPath && existsSync(inputPath) ? readFileSync(inputPath, "utf8") : "";
+const field = (name) => new RegExp(`^- ${name}: \`?([^\`\\n]+)\`?`, "m").exec(input)?.[1];
+const kind = /^- Step: `([a-z0-9-]+)`/m.exec(input)?.[1] ?? "unknown";
+const attempt = Number(field("Attempt") ?? 1);
+const outputDir = field("Output directory");
+const taskId = /^# Step input: \S+ — (TASK-\d+)/m.exec(input)?.[1];
+const template = parse(/```yaml\n---\n([\s\S]*?)\n---\n```/.exec(input)?.[1] ?? "{}") ?? {};
+
+const script = JSON.parse(process.env.FAKE_CLAUDE_SCRIPT ?? "{}");
+const behaviour = script[kind]?.[attempt - 1] ?? script.default ?? "done";
+
+trace("started", {
+  agent: flags["--agent"],
+  prompt: positionals[0],
+  settingSources: flags["--setting-sources"],
+  permissionMode: flags["--permission-mode"],
+  model: flags["--model"],
+  kind,
+  attempt,
+  behaviour,
+});
+
+// ----------------------------------------------------------------- artifacts
+
+function writeFile(rel, content) {
+  mkdirSync(dirname(rel), { recursive: true });
+  writeFileSync(rel, content);
+  return rel;
+}
+
+/** Path of the latest plan test-plan.md, from the "Earlier steps" section of input.md. */
+function testPlanPath() {
+  const planOutput = /### plan\n\n[\s\S]*?- `([^`]+\/output\.md)`/.exec(input)?.[1];
+  return planOutput ? join(dirname(planOutput), "test-plan.md") : undefined;
+}
+
+function produce(status) {
+  const files = [];
+  const extras = {};
+  const out = (name, content) => files.push(writeFile(join(outputDir, name), content));
+  switch (kind) {
+    case "plan": {
+      const acs = [...new Set(readFileSync(join(".factory", "backlog", `${taskId}.md`), "utf8").match(/\bAC-\d+\b/g) ?? [])];
+      out("plan.md", "# Plan\nFake plan.\n");
+      out("test-plan.md", `# Test plan\n\n${acs.map((ac, i) => `### TC-${String(i + 1).padStart(2, "0")} — covers ${ac}\n`).join("\n")}`);
+      Object.assign(extras, { test_cases: acs.length, covered_acs: acs });
+      break;
+    }
+    case "design":
+      out("design.md", "# Design\nFake design.\n");
+      break;
+    case "development": {
+      out("dev-notes.md", "# Dev notes\nFake change.\n");
+      execFileSync("git", ["-c", "user.name=fake", "-c", "user.email=fake@example.invalid", "commit", "-q", "--allow-empty", "-m", `feat: fake development attempt ${attempt}`]);
+      extras.commits = [execFileSync("git", ["rev-parse", "--short", "HEAD"], { encoding: "utf8" }).trim()];
+      break;
+    }
+    case "security":
+      out("security-report.md", status === "failed" ? "# Security\n| 1 | gitleaks | src/config.js:1 | high | confirmed | token |\n" : "# Security\nNo findings.\n");
+      extras.findings = { critical: 0, high: status === "failed" ? 1 : 0, medium: 0, low: 0 };
+      break;
+    case "e2e": {
+      const plan = testPlanPath();
+      const tcs = plan && existsSync(plan) ? [...new Set(readFileSync(plan, "utf8").match(/\bTC-\d+\b/g) ?? [])] : ["TC-01"];
+      const cases = tcs.map((id, i) => {
+        files.push(writeFile(join(outputDir, "evidence", id, "01-step.png"), "png"));
+        return { id, frs: ["FR-001"], result: status === "failed" && i === 0 ? "failed" : "passed", files: [`${id}/01-step.png`] };
+      });
+      out("evidence/manifest.json", JSON.stringify({ task: taskId, cases }, null, 2));
+      out("test-report.md", `# Test report\n${cases.map((c) => `| ${c.id} | ${c.result} |`).join("\n")}\n`);
+      const failed = cases.filter((c) => c.result === "failed").length;
+      extras.tests = { total: cases.length, passed: cases.length - failed, failed };
+      break;
+    }
+    case "pr":
+      out("pr.md", "## Summary\nFake PR.\n");
+      Object.assign(extras, { pr_url: "https://github.com/example/demo-project/pull/7", pr_number: 7 });
+      break;
+  }
+  const outputMd = join(outputDir, "output.md");
+  const artifacts = [outputMd, ...files];
+  const summary = `Fake ${kind} attempt ${attempt}: ${status}`;
+  const frontmatter = { ...template, step: kind, task: taskId, attempt, status, summary, artifacts, ...extras };
+  writeFile(outputMd, `---\n${stringify(frontmatter)}---\n\n## Summary\n${summary}\n`);
+  return { status, summary, artifacts };
+}
+
+// ---------------------------------------------------------- hooks and report
 
 async function hook(event, extra = {}) {
   const body = { session_id: sessionId, transcript_path: transcriptPath, cwd: process.cwd(), hook_event_name: event, ...extra };
@@ -67,10 +163,8 @@ async function reportStep(args) {
   const server = mcpConfig.mcpServers.factory;
   const client = new Client({ name: "fake-claude", version: "0.0.0" });
   await client.connect(new StreamableHTTPClientTransport(new URL(server.url), { requestInit: { headers: server.headers } }));
-  const tools = await client.listTools();
-  trace("tools", { names: tools.tools.map((t) => t.name) });
   const result = await client.callTool({ name: "report_step", arguments: args });
-  trace("report_step", { isError: result.isError ?? false, text: result.content?.[0]?.text });
+  trace("report_step", { kind, attempt, status: args.status, isError: result.isError ?? false, text: result.content?.[0]?.text });
   await client.close();
   return result;
 }
@@ -88,10 +182,6 @@ async function waitForRelease() {
   while (!file || !existsSync(file)) await sleep(100);
 }
 
-function idleForever() {
-  setInterval(() => undefined, 60_000);
-}
-
 let ending = false;
 async function endSession(reason) {
   if (ending) return;
@@ -104,24 +194,29 @@ async function endSession(reason) {
 process.on("SIGHUP", () => void endSession("other"));
 process.on("SIGTERM", () => void endSession("other"));
 
-const inputPath = positionals[0]?.match(/Read (\S+) and run the step/)?.[1];
-const report = { status: "done", summary: "Fake planner finished.", artifacts: [] };
+async function finish(status) {
+  await reportStep(produce(status));
+  await stop();
+}
 
 async function main() {
-  if (inputPath && existsSync(inputPath)) {
-    trace("input", { path: inputPath });
-    writeFileSync(inputPath.replace(/input\.md$/, "output.md"), "## Summary\nFake output.\n");
-    report.artifacts = [inputPath.replace(/input\.md$/, "output.md")];
-  }
-  switch (scenario) {
-    case "report":
-      await reportStep(report);
-      await stop();
+  switch (behaviour) {
+    case "done":
+    case "failed":
+    case "blocked":
+      await finish(behaviour);
       break;
+    case "bad-output-then-fix": {
+      const report = produce("done");
+      writeFile(join(outputDir, "output.md"), "no frontmatter here\n");
+      const first = await reportStep(report);
+      trace("first_report", { isError: first.isError ?? false });
+      await finish("done");
+      break;
+    }
     case "stop-then-report": {
-      const allowed = await stop();
-      trace("first_stop", { allowed });
-      await reportStep(report);
+      trace("first_stop", { allowed: await stop() });
+      await reportStep(produce("done"));
       await stop(true);
       break;
     }
@@ -133,13 +228,11 @@ async function main() {
     case "permission":
       await hook("Notification", { notification_type: "permission_prompt", message: "Claude needs your permission to use Bash" });
       await waitForRelease();
-      await reportStep(report);
-      await stop();
+      await finish("done");
       break;
     case "wait-release":
       await waitForRelease();
-      await reportStep(report);
-      await stop();
+      await finish("done");
       break;
     case "exit-without-report":
       await endSession("prompt_input_exit");
@@ -150,12 +243,12 @@ async function main() {
     case "hang":
       break;
     default:
-      throw new Error(`Unknown scenario ${scenario}`);
+      throw new Error(`Unknown behaviour ${behaviour}`);
   }
-  idleForever();
+  setInterval(() => undefined, 60_000);
 }
 
 main().catch((error) => {
-  trace("error", { message: String(error) });
-  idleForever();
+  trace("error", { message: String(error), stack: error?.stack });
+  setInterval(() => undefined, 60_000);
 });

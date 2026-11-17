@@ -1,20 +1,29 @@
 import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import { notificationHookInput, sessionEndHookInput, startStepRequest, stopHookInput } from "@forge/shared";
+import { notificationHookInput, sessionEndHookInput, startRunRequest, stopHookInput } from "@forge/shared";
 import { z } from "zod";
 import { TOKEN_HEADER, tokenMatches } from "../auth.js";
-import { DuplicateStepError, toStepView, type StepStore } from "../db/step-store.js";
+import { DuplicateRunError, toRunView, type RunStore } from "../db/run-store.js";
+import { toStepView, type StepStore } from "../db/step-store.js";
 import { createFactoryMcpServer } from "../mcp/factory-server.js";
+import type { MemoryAdapter } from "../memory/memory-adapter.js";
+import { RunRequestError, type RunService } from "../runs/run-service.js";
 import { StepRequestError, type StepService } from "../steps/step-service.js";
 
 interface ServerDeps {
   token: string;
   store: StepStore;
   service: StepService;
+  runs: RunStore;
+  runService: RunService;
+  memory: MemoryAdapter;
+  /** Engram project name for a project path (from project.yaml). */
+  memoryProject: (projectPath: string) => string;
   logger?: boolean;
 }
 
 const stepIdParams = z.object({ stepId: z.uuid() });
+const runIdParams = z.object({ runId: z.uuid() });
 
 function badRequest(reply: FastifyReply, error: z.ZodError) {
   return reply.code(400).send({ error: "invalid_request", issues: error.issues });
@@ -39,7 +48,7 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
   app.post("/hooks/stop", async (request, reply) => {
     const parsed = stopHookInput.safeParse(request.body);
     if (!parsed.success) return badRequest(reply, parsed.error);
-    const decision = deps.service.onStop(parsed.data);
+    const decision = await deps.service.onStop(parsed.data);
     return decision ? reply.send(decision) : reply.code(204).send();
   });
 
@@ -82,17 +91,45 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
 
   // ------------------------------------------------------------- steps
 
-  app.post("/steps", async (request, reply) => {
-    const parsed = startStepRequest.safeParse(request.body);
+  app.post("/runs", async (request, reply) => {
+    const parsed = startRunRequest.safeParse(request.body);
     if (!parsed.success) return badRequest(reply, parsed.error);
     try {
-      const row = await deps.service.start(parsed.data);
-      return reply.code(201).send(toStepView(row));
+      return await reply.code(201).send(toRunView(await deps.runService.start(parsed.data)));
     } catch (error) {
-      if (error instanceof DuplicateStepError) return reply.code(409).send({ error: "duplicate_step", message: error.message });
-      if (error instanceof StepRequestError) return reply.code(400).send({ error: "invalid_step", message: error.message });
+      if (error instanceof DuplicateRunError) return reply.code(409).send({ error: "duplicate_run", message: error.message, runId: error.runId });
+      if (error instanceof RunRequestError || error instanceof StepRequestError) return reply.code(400).send({ error: "invalid_run", message: error.message });
       throw error;
     }
+  });
+
+  app.get("/runs", () => deps.runs.list().map(toRunView));
+
+  app.get("/runs/:runId", async (request, reply) => {
+    const params = runIdParams.safeParse(request.params);
+    if (!params.success) return badRequest(reply, params.error);
+    const run = deps.runs.get(params.data.runId);
+    if (!run) return reply.code(404).send({ error: "unknown_run" });
+    // Memory is complementary: a missing Engram must not break the status view.
+    const memories = await deps.memory.listByTask(deps.memoryProject(run.projectPath), run.taskId).then(
+      (list) => ({ available: true, items: list.map(({ id, title, ref, createdAt }) => ({ id, title, ref, createdAt })) }),
+      (error: unknown) => ({ available: false, error: error instanceof Error ? error.message : String(error), items: [] }),
+    );
+    return { ...toRunView(run), steps: deps.runs.steps(run.id).map(toStepView), events: deps.store.events(run.id), memories };
+  });
+
+  app.post("/runs/:runId/resume", async (request, reply) => {
+    const params = runIdParams.safeParse(request.params);
+    if (!params.success) return badRequest(reply, params.error);
+    const result = await deps.runService.resume(params.data.runId);
+    return reply.code(result.ok ? 200 : 409).send(result);
+  });
+
+  app.post("/runs/:runId/cancel", async (request, reply) => {
+    const params = runIdParams.safeParse(request.params);
+    if (!params.success) return badRequest(reply, params.error);
+    const result = await deps.runService.cancel(params.data.runId);
+    return reply.code(result.ok ? 200 : 409).send(result);
   });
 
   app.get("/steps", () => deps.store.list().map(toStepView));

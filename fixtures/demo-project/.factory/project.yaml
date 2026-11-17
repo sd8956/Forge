@@ -1,14 +1,18 @@
 name: demo-project
-platforms: [cli]
+platforms: [web]
 stack:
-  language: typescript
+  language: javascript
   runtime: node22
+  frameworks: []
 commands:
-  build: npm run build
-  test: npm test
-  up: node dist/cli.js
+  build: make build
+  lint: make lint
+  unit: make unit
+  check: make check
+  up: make up
+  e2e: make e2e
 policies:
-  step_timeout_minutes: 30
+  step_timeout_minutes: 45
   max_stop_blocks: 3
 review:
   allowed_authors: []

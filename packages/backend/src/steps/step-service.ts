@@ -1,30 +1,66 @@
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { isAbsolute, join, resolve } from "node:path";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import {
   ATTENTION_NOTIFICATION_TYPES,
   isTerminalStepStatus,
   type NotificationHookInput,
   type ReportStepInput,
   type SessionEndHookInput,
-  type StartStepRequest,
+  type StepKind,
   type StopHookInput,
 } from "@forge/shared";
 import type { ForgeConfig } from "../config.js";
 import type { StepRow } from "../db/schema.js";
 import type { StepStore } from "../db/step-store.js";
-import { reportEvent } from "../domain/step-machine.js";
+import { reportEvent, type StepEvent } from "../domain/step-machine.js";
 import { decideStop } from "../domain/stop-policy.js";
 import { shellQuote, type Tmux } from "../runner/tmux.js";
-import { ensureWorktree, worktreePathFor } from "../runner/worktree.js";
 import { agentPermissionMode } from "./agent-file.js";
-import { renderInput, runDirFor, STEP_DEFINITIONS } from "./definitions.js";
 
 export class StepRequestError extends Error {}
 
 export type StopHookResponse = { decision: "block"; reason: string } | null;
 
 export type ReportResult = { ok: true; message: string } | { ok: false; message: string };
+
+/** Everything needed to launch one step session. The run service builds it. */
+export interface StepLaunchSpec {
+  id: string;
+  runId: string | null;
+  projectPath: string;
+  taskId: string;
+  kind: StepKind;
+  attempt: number;
+  agent: string;
+  model: string;
+  worktreePath: string;
+  /** Absolute path of the settings template (read from the project's main checkout). */
+  settingsTemplate: string;
+  /** Absolute paths inside the worktree. */
+  inputPath: string;
+  outputPath: string;
+  input: string;
+  /** First prompt; must name the input file. */
+  prompt: string;
+  timeoutMs: number;
+}
+
+/**
+ * What a step's owner decides: whether a report is acceptable, what the Stop
+ * hook adds to its reminder, and what happens after a status change.
+ */
+export interface StepPolicy {
+  validateReport(step: StepRow, input: ReportStepInput): Promise<{ ok: true } | { ok: false; issues: string[] }>;
+  stopCheck(step: StepRow): Promise<string | null>;
+  onStepChanged(step: StepRow): void;
+}
+
+const NO_POLICY: StepPolicy = {
+  validateReport: () => Promise.resolve({ ok: true }),
+  stopCheck: () => Promise.resolve(null),
+  onStepChanged: () => undefined,
+};
 
 interface Deps {
   config: ForgeConfig;
@@ -42,6 +78,7 @@ interface Deps {
  * close and startup reconciliation. It never reads the tmux screen.
  */
 export class StepService {
+  policy: StepPolicy = NO_POLICY;
   private readonly timers = new Map<string, NodeJS.Timeout>();
   private sweepTimer: NodeJS.Timeout | undefined;
   private readonly pending = new Set<Promise<unknown>>();
@@ -59,66 +96,48 @@ export class StepService {
 
   // ---------------------------------------------------------------- launch
 
-  async start(req: StartStepRequest): Promise<StepRow> {
-    const def = STEP_DEFINITIONS[req.step];
-    if (!def) throw new StepRequestError(`Unknown step "${req.step}". Known steps: ${Object.keys(STEP_DEFINITIONS).join(", ")}`);
-    const projectPath = resolve(req.projectPath);
-    this.validateProject(projectPath, req.taskId);
-
-    const stepId = randomUUID();
-    const worktreePath = worktreePathFor(projectPath, req.taskId);
-    const runDir = join(worktreePath, runDirFor(req.taskId, def.kind));
+  async start(spec: StepLaunchSpec): Promise<StepRow> {
     const row = this.store.insert({
-      id: stepId,
-      projectPath,
-      taskId: req.taskId,
-      kind: def.kind,
-      agent: def.agent,
-      tmuxSession: `forge-${req.taskId}-${def.kind}`,
+      id: spec.id,
+      runId: spec.runId,
+      projectPath: spec.projectPath,
+      taskId: spec.taskId,
+      kind: spec.kind,
+      attempt: spec.attempt,
+      agent: spec.agent,
+      model: spec.model,
+      // The attempt keeps names unique: a delayed close of attempt n must never kill attempt n+1.
+      tmuxSession: `forge-${spec.taskId}-${spec.kind}-${spec.attempt}`,
       claudeSessionId: randomUUID(),
-      worktreePath,
-      inputPath: join(runDir, "input.md"),
-      outputPath: join(runDir, "output.md"),
-      timeoutMs: req.timeoutMinutes ? Math.round(req.timeoutMinutes * 60_000) : this.deps.config.defaultTimeoutMs,
+      worktreePath: spec.worktreePath,
+      inputPath: spec.inputPath,
+      outputPath: spec.outputPath,
+      timeoutMs: spec.timeoutMs,
     });
 
     try {
-      await ensureWorktree(projectPath, req.taskId);
-      mkdirSync(runDir, { recursive: true });
-      writeFileSync(row.inputPath, renderInput(def, { stepId, taskId: req.taskId }));
-      const permissionMode = agentPermissionMode(worktreePath, def.agent);
-      const files = this.renderSessionFiles(row, join(worktreePath, ".factory", "steps", def.settingsFile));
+      const permissionMode = agentPermissionMode(spec.worktreePath, spec.agent);
+      mkdirSync(dirname(spec.inputPath), { recursive: true });
+      writeFileSync(spec.inputPath, spec.input);
+      const files = this.renderSessionFiles(row, spec.settingsTemplate);
       // A stale session with the same name can only belong to a finished step.
       await this.deps.tmux.killSession(row.tmuxSession);
       await this.deps.tmux.newSession({
         name: row.tmuxSession,
-        cwd: worktreePath,
-        command: this.claudeCommand(row, files, permissionMode),
+        cwd: spec.worktreePath,
+        command: this.claudeCommand(row, files, permissionMode, spec.prompt),
         env: { FORGE_STEP_ID: row.id, ...this.deps.config.extraEnv },
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      this.store.transition(row.id, "launch_failed", { exitReason: "launch_failed", endedAt: this.now() }, { error: message });
-      throw new StepRequestError(`Could not launch step: ${message}`);
+      this.transition(row.id, "launch_failed", { exitReason: "launch_failed", endedAt: this.now() }, { error: message });
+      throw new StepRequestError(`Could not launch step ${spec.kind}: ${message}`);
     }
 
     const startedAt = this.now();
-    this.store.transition(row.id, "launch", { startedAt, deadlineAt: startedAt + row.timeoutMs });
+    this.transition(row.id, "launch", { startedAt, deadlineAt: startedAt + row.timeoutMs });
     this.armTimeout(row.id, row.timeoutMs);
     return this.mustGet(row.id);
-  }
-
-  private validateProject(projectPath: string, taskId: string): void {
-    if (!isAbsolute(projectPath) || !existsSync(projectPath) || !statSync(projectPath).isDirectory()) {
-      throw new StepRequestError(`Project path is not a directory: ${projectPath}`);
-    }
-    if (!existsSync(join(projectPath, ".git"))) throw new StepRequestError(`Project is not a git repository: ${projectPath}`);
-    if (!existsSync(join(projectPath, ".factory", "project.yaml"))) {
-      throw new StepRequestError(`Missing .factory/project.yaml in ${projectPath}`);
-    }
-    if (!existsSync(join(projectPath, ".factory", "backlog", `${taskId}.md`))) {
-      throw new StepRequestError(`Missing .factory/backlog/${taskId}.md in ${projectPath}`);
-    }
   }
 
   /**
@@ -143,14 +162,14 @@ export class StepService {
     return files;
   }
 
-  private claudeCommand(row: StepRow, files: { settings: string; mcp: string; exitCode: string }, permissionMode: string): string {
-    const prompt = `Read ${runDirFor(row.taskId, row.kind)}/input.md and run the step.`;
+  private claudeCommand(row: StepRow, files: { settings: string; mcp: string; exitCode: string }, permissionMode: string, prompt: string): string {
     // The prompt goes first: --mcp-config is variadic and would swallow a trailing prompt.
     const args = [
       this.deps.config.claudeBin,
       prompt,
       "--agent", row.agent,
       "--permission-mode", permissionMode,
+      ...(row.model ? ["--model", row.model] : []),
       "--session-id", row.claudeSessionId,
       "--setting-sources", "project",
       "--settings", files.settings,
@@ -161,13 +180,21 @@ export class StepService {
 
   // ------------------------------------------------------------ report_step
 
-  report(stepId: string, input: ReportStepInput): ReportResult {
+  async report(stepId: string, input: ReportStepInput): Promise<ReportResult> {
     const step = this.store.get(stepId);
     if (!step) return { ok: false, message: `Unknown step ${stepId}.` };
     if (isTerminalStepStatus(step.status)) {
       return { ok: false, message: `This step was already closed as "${step.status}". Stop working now.` };
     }
-    const result = this.store.transition(
+    const validation = await this.policy.validateReport(step, input);
+    if (!validation.ok) {
+      this.store.recordEvent(stepId, "report_rejected", { status: input.status, issues: validation.issues });
+      return {
+        ok: false,
+        message: `Report rejected. Fix these problems, update output.md, and call report_step again:\n- ${validation.issues.join("\n- ")}`,
+      };
+    }
+    const result = this.transition(
       stepId,
       reportEvent(input.status),
       { summary: input.summary, artifacts: input.artifacts, reportedAt: this.now(), exitReason: `reported_${input.status}` },
@@ -180,7 +207,7 @@ export class StepService {
 
   // ------------------------------------------------------------------ hooks
 
-  onStop(input: StopHookInput): StopHookResponse {
+  async onStop(input: StopHookInput): Promise<StopHookResponse> {
     const step = this.stepForHook(input.session_id, "Stop", input);
     if (!step) return null;
     const decision = decideStop({
@@ -193,12 +220,13 @@ export class StepService {
     });
     if (decision.action === "block") {
       const count = this.store.incrementStopBlocks(step.id);
-      this.store.recordEvent(step.id, "stop_blocked", { count, stopHookActive: input.stop_hook_active });
-      return { decision: "block", reason: decision.reason };
+      const check = await this.policy.stopCheck(step);
+      this.store.recordEvent(step.id, "stop_blocked", { count, stopHookActive: input.stop_hook_active, check });
+      return { decision: "block", reason: check ? `${check}\n\n${decision.reason}` : decision.reason };
     }
     this.store.recordEvent(step.id, "stop_allowed", { why: decision.why });
     if (decision.why === "block_limit" && step.status === "running") {
-      this.store.transition(step.id, "attention", {}, { cause: "stop_block_limit" });
+      this.transition(step.id, "attention", {}, { cause: "stop_block_limit" });
     }
     return null;
   }
@@ -208,7 +236,7 @@ export class StepService {
     if (!step) return;
     const type = input.notification_type ?? "";
     if ((ATTENTION_NOTIFICATION_TYPES as readonly string[]).includes(type) && step.status === "running") {
-      this.store.transition(step.id, "attention", {}, { cause: type, message: input.message ?? null });
+      this.transition(step.id, "attention", {}, { cause: type, message: input.message ?? null });
     }
   }
 
@@ -218,7 +246,7 @@ export class StepService {
     if (step.endedAt === null) this.store.update(step.id, { endedAt: this.now() });
     if (!isTerminalStepStatus(step.status)) {
       this.clearTimeout(step.id);
-      this.store.transition(step.id, "session_ended", { exitReason: `session_ended_without_report:${input.reason ?? "unknown"}` });
+      this.transition(step.id, "session_ended", { exitReason: `session_ended_without_report:${input.reason ?? "unknown"}` });
     }
   }
 
@@ -238,6 +266,16 @@ export class StepService {
 
   // --------------------------------------------------------- timeout, close
 
+  /** Ends a live step because its run was cancelled, and closes its session. */
+  async cancel(stepId: string): Promise<void> {
+    const result = this.transition(stepId, "cancel", { exitReason: "cancelled" });
+    if (result.ok) await this.close(stepId, "cancelled");
+  }
+
+  async isSessionAlive(step: StepRow): Promise<boolean> {
+    return this.deps.tmux.hasSession(step.tmuxSession);
+  }
+
   private armTimeout(stepId: string, ms: number): void {
     this.clearTimeout(stepId);
     const timer = setTimeout(() => this.track(this.onTimeout(stepId)), Math.max(0, ms));
@@ -253,7 +291,7 @@ export class StepService {
 
   private async onTimeout(stepId: string): Promise<void> {
     this.timers.delete(stepId);
-    const result = this.store.transition(stepId, "timeout", { exitReason: "timeout" });
+    const result = this.transition(stepId, "timeout", { exitReason: "timeout" });
     if (result.ok) await this.close(stepId, "timeout");
   }
 
@@ -277,12 +315,16 @@ export class StepService {
 
   /** Marks live steps whose tmux session disappeared without a SessionEnd hook. */
   async sweep(): Promise<void> {
+    // Read the live steps before the session list: a step launched while tmux answers
+    // is not in this snapshot of steps, so it can never be mistaken for a vanished one.
+    const live = this.store.listLive();
     const sessions = new Set(await this.deps.tmux.listSessions());
-    for (const step of this.store.listLive()) {
+    for (const step of live) {
       if (step.status === "queued" || sessions.has(step.tmuxSession)) continue;
+      if (this.store.get(step.id)?.status !== step.status) continue; // changed meanwhile
       const exitCode = this.readExitCode(step.id);
       this.clearTimeout(step.id);
-      this.store.transition(step.id, "session_ended", { exitReason: "session_vanished", endedAt: this.now() }, { exitCode });
+      this.transition(step.id, "session_ended", { exitReason: "session_vanished", endedAt: this.now() }, { exitCode });
     }
   }
 
@@ -303,7 +345,7 @@ export class StepService {
       }
       orphaned.push(step.id);
       const reason = step.status === "queued" ? "orphaned_before_launch" : "orphaned_session_missing";
-      this.store.transition(step.id, "orphaned", { exitReason: reason, endedAt: this.now() }, { exitCode: this.readExitCode(step.id) });
+      this.transition(step.id, "orphaned", { exitReason: reason, endedAt: this.now() }, { exitCode: this.readExitCode(step.id) });
     }
     // Sessions of finished steps that were never killed (backend died during the close grace).
     const live = new Set(this.store.listLive().map((s) => s.tmuxSession));
@@ -330,12 +372,19 @@ export class StepService {
     await Promise.allSettled([...this.pending]);
   }
 
+  /** Every status change goes through here so the step's owner hears about it. */
+  private transition(id: string, event: StepEvent, patch: Parameters<StepStore["transition"]>[2] = {}, payload: Record<string, unknown> = {}) {
+    const result = this.store.transition(id, event, patch, payload);
+    if (result.ok) this.policy.onStepChanged(this.mustGet(id));
+    return result;
+  }
+
   private readExitCode(stepId: string): string | null {
     const file = join(this.deps.config.home, "steps", stepId, "exit-code");
     return existsSync(file) ? readFileSync(file, "utf8").trim() : null;
   }
 
-  private track(promise: Promise<unknown>): void {
+  track(promise: Promise<unknown>): void {
     const tracked = promise.catch((error: unknown) => this.log("background task failed", { error: String(error) }));
     this.pending.add(tracked);
     void tracked.finally(() => this.pending.delete(tracked));

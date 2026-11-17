@@ -10,6 +10,14 @@ export function isTerminalStepStatus(status: StepStatus): boolean {
   return TERMINAL_STEP_STATUSES.includes(status);
 }
 
+/** Lifecycle of one pipeline run (one task through every step). */
+export const RUN_STATUSES = ["queued", "running", "waiting_review", "needs_human", "done", "failed", "cancelled"] as const;
+export type RunStatus = (typeof RUN_STATUSES)[number];
+
+/** Pipeline step kinds the backend knows how to hand off and validate, in pipeline order. */
+export const STEP_KINDS = ["plan", "design", "development", "security", "e2e", "pr"] as const;
+export type StepKind = (typeof STEP_KINDS)[number];
+
 /** Statuses an agent may report through the `report_step` MCP tool. */
 export const REPORT_STATUSES = ["done", "blocked", "failed"] as const;
 export type ReportStatus = (typeof REPORT_STATUSES)[number];
@@ -59,20 +67,38 @@ export type SessionEndHookInput = z.infer<typeof sessionEndHookInput>;
 /** Notification types that mean a person must look at the session. */
 export const ATTENTION_NOTIFICATION_TYPES = ["permission_prompt", "idle_prompt"] as const;
 
-/** Body of `POST /steps`. */
-export const startStepRequest = z.object({
+/** Body of `POST /runs`. */
+export const startRunRequest = z.object({
   projectPath: z.string().min(1),
   taskId: z.string().regex(/^TASK-\d{3,}$/, "taskId must look like TASK-001"),
-  step: z.string().min(1),
-  timeoutMinutes: z.number().positive().max(24 * 60).optional(),
 });
-export type StartStepRequest = z.infer<typeof startStepRequest>;
+export type StartRunRequest = z.infer<typeof startRunRequest>;
+
+/** Public view of a run returned by the HTTP API. */
+export interface RunView {
+  id: string;
+  taskId: string;
+  projectPath: string;
+  branch: string;
+  baseBranch: string;
+  status: RunStatus;
+  currentStep: StepKind;
+  attempts: Partial<Record<StepKind, number>>;
+  prUrl: string | null;
+  prNumber: number | null;
+  exitReason: string | null;
+  createdAt: number;
+  endedAt: number | null;
+}
 
 /** Public view of a step returned by the HTTP API. */
 export interface StepView {
   id: string;
+  runId: string | null;
   taskId: string;
   kind: string;
+  attempt: number;
+  model: string | null;
   agent: string;
   status: StepStatus;
   tmuxSession: string;

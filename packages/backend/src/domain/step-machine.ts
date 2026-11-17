@@ -15,6 +15,7 @@ export const STEP_EVENTS = [
   "timeout",
   "session_ended",
   "orphaned",
+  "cancel",
 ] as const;
 export type StepEvent = (typeof STEP_EVENTS)[number];
 
@@ -39,6 +40,8 @@ export const STEP_TRANSITIONS: readonly Transition[] = [
   { from: ACTIVE, event: "session_ended", to: "failed" },
   // Found during startup reconciliation without a live tmux session.
   { from: ["queued", ...ACTIVE], event: "orphaned", to: "failed" },
+  // The run was cancelled by a person.
+  { from: ["queued", ...ACTIVE], event: "cancel", to: "failed" },
 ];
 
 export type TransitionResult =

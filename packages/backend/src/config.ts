@@ -1,3 +1,4 @@
+import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 
 export interface ForgeConfig {
@@ -17,6 +18,13 @@ export interface ForgeConfig {
   sweepIntervalMs: number;
   /** Extra environment passed to every step session. Used by tests. */
   extraEnv: Record<string, string>;
+  /** Claude Code config read (never written) to check that a project is trusted. */
+  claudeConfigFile: string;
+  checkTrust: boolean;
+  /** Timeout of exit commands such as `make check`. */
+  checkTimeoutMs: number;
+  /** Engram HTTP API, read-only. */
+  engramUrl: string;
 }
 
 function intFromEnv(value: string | undefined, fallback: number): number {
@@ -38,6 +46,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, cwd = process.c
     closeGraceMs: intFromEnv(env.FORGE_CLOSE_GRACE_MS, 1500),
     sweepIntervalMs: intFromEnv(env.FORGE_SWEEP_INTERVAL_MS, 5000),
     extraEnv: {},
+    claudeConfigFile: env.FORGE_CLAUDE_CONFIG ?? join(homedir(), ".claude.json"),
+    checkTrust: env.FORGE_CHECK_TRUST !== "0",
+    checkTimeoutMs: intFromEnv(env.FORGE_CHECK_TIMEOUT_MS, 10 * 60_000),
+    engramUrl: env.FORGE_ENGRAM_URL ?? "http://127.0.0.1:7437",
   };
 }
 

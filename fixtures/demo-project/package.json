@@ -1,0 +1,15 @@
+{
+  "name": "demo-project",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Tiny todo web app used to exercise the Forge pipeline",
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test test/*.test.js",
+    "test:e2e": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.65.1"
+  }
+}
