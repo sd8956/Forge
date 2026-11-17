@@ -71,6 +71,18 @@ export const api = {
   startOrchestrator: (projectId: string, prompt?: string) =>
     request<{ session: OrchestratorSession }>(`/projects/${projectId}/orchestrator`, { method: "POST", body: JSON.stringify(prompt ? { prompt } : {}) }),
   stopOrchestrator: (projectId: string) => request<{ stopped: boolean }>(`/projects/${projectId}/orchestrator`, { method: "DELETE" }),
+  memories: (projectId: string, filter: { q?: string; ref?: string } = {}) => {
+    const params = new URLSearchParams();
+    if (filter.q) params.set("q", filter.q);
+    if (filter.ref) params.set("ref", filter.ref);
+    return request<MemoryList>(`/projects/${projectId}/memories${params.size ? `?${params.toString()}` : ""}`);
+  },
+  settings: () => request<ForgeSettings>("/settings"),
+  updateSettings: (patch: Partial<Pick<ForgeSettings, "maxConcurrency" | "usagePausePercent" | "auth">>) =>
+    request<ForgeSettings>("/settings", { method: "PATCH", body: JSON.stringify(patch) }),
+  saveApiKey: (key: string) => request<ForgeSettings>("/settings/api-key", { method: "PUT", body: JSON.stringify({ key }) }),
+  removeApiKey: () => request<ForgeSettings>("/settings/api-key", { method: "DELETE" }),
+  projectSettings: (projectId: string) => request<ProjectSettings>(`/projects/${projectId}/settings`),
   definitions: () => request<{ projectId: string; repoPath: string; prUrl: string | null }[]>("/definitions"),
   definition: (projectId: string) => request<DefinitionView>(`/projects/${projectId}/definition`),
   beginDefinition: (path: string, idea: string) => request<DefinitionView>("/definitions", { method: "POST", body: JSON.stringify({ path, idea }) }),
@@ -95,4 +107,36 @@ export interface OrchestratorSession {
 /** URL of a file in a run's handoff folder (screenshots, reports, output.md). */
 export function runFileUrl(runId: string, path: string): string {
   return `/runs/${runId}/files?path=${encodeURIComponent(path)}`;
+}
+
+export interface MemoryItem {
+  id: number;
+  title: string;
+  type: string;
+  content: string;
+  createdAt: string;
+  ref: string | null;
+  runId: string | null;
+}
+
+export interface MemoryList {
+  available: boolean;
+  error?: string;
+  items: MemoryItem[];
+}
+
+export interface ForgeSettings {
+  maxConcurrency: number;
+  usagePausePercent: number;
+  auth: "subscription" | "api_key";
+  apiKey: { configured: boolean; last4: string | null };
+}
+
+export interface ProjectSettings {
+  file: string;
+  permissionMode: "auto" | "agent";
+  maxConcurrency: number | null;
+  allowedAuthors: string[];
+  pollIntervalSeconds: number | null;
+  commands: Record<string, string>;
 }

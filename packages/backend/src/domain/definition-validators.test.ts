@@ -75,6 +75,15 @@ describe("validateStage", () => {
     ]);
   });
 
+  it("needs Maestro in the test strategy of a mobile project, and Playwright is not required there", () => {
+    const mobile = { ...base, ".factory/project.yaml": "name: app\nplatforms: [android, ios]\n" };
+    expect(issues("test_strategy", { ...mobile, ".factory/test-strategy.md": "# Test strategy\n\nPlaywright. Evidence: screenshots." })).toEqual([
+      "test-strategy.md must use Maestro for the mobile platforms (android, ios), as the e2e step runs Maestro flows there",
+    ]);
+    expect(issues("test_strategy", { ...mobile, ".factory/test-strategy.md": "# Test strategy\n\nMaestro flows on an Android emulator. Evidence: a screenshot per step." })).toEqual([]);
+    expect(issues("test_strategy", { ...base, ".factory/project.yaml": "name: app\nplatforms: [mobile]\n", ".factory/test-strategy.md": "Evidence only." })).toHaveLength(1);
+  });
+
   it("needs a test strategy that names the evidence", () => {
     expect(issues("test_strategy", { ...base, ".factory/test-strategy.md": "# Test strategy\n\nPlaywright." })).toEqual(["test-strategy.md must say which evidence each case type needs"]);
   });

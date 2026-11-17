@@ -57,8 +57,8 @@ export function queueView(deps: ViewDeps, projectPath?: string): QueueView {
   return {
     paused: deps.scheduler.pauseState(),
     usage: deps.scheduler.usage(),
-    usagePausePercent: deps.config.usagePausePercent,
-    maxConcurrency: deps.config.maxConcurrency,
+    usagePausePercent: deps.scheduler.limits().usagePausePercent,
+    maxConcurrency: deps.scheduler.limits().maxConcurrency,
     active: deps.runs
       .listOpen()
       .filter((r) => !projectPath || r.projectPath === projectPath)

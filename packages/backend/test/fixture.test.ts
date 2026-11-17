@@ -60,6 +60,16 @@ describe("demo-project fixture contract", () => {
     expect(settings.permissions.deny).toEqual(expect.arrayContaining(["Bash(git commit:*)", "Bash(git push:*)", "Bash(gh:*)"]));
   });
 
+  it("lets the e2e step run Maestro flows with evidence for mobile projects", () => {
+    const tester = readFileSync(join(FIXTURE, ".claude", "agents", "forge-tester.md"), "utf8");
+    const frontmatter = parse(/^---\n([\s\S]*?)\n---/.exec(tester)?.[1] ?? "") as { skills: string[] };
+    expect(frontmatter.skills).toEqual(expect.arrayContaining(["playwright-evidence", "maestro-evidence", "evidence-manifest"]));
+    const skill = readFileSync(join(FIXTURE, ".claude", "skills", "maestro-evidence", "SKILL.md"), "utf8");
+    expect(parse(/^---\n([\s\S]*?)\n---/.exec(skill)?.[1] ?? "")).toMatchObject({ name: "maestro-evidence" });
+    expect(skill).toContain("takeScreenshot");
+    expect(skill).toContain("evidence/manifest.json");
+  });
+
   it("gives the orchestrator read-only tools and the factory MCP server, never Bash or writes", () => {
     const agent = readFileSync(join(FIXTURE, ".claude", "agents", "forge-orchestrator.md"), "utf8");
     const frontmatter = parse(/^---\n([\s\S]*?)\n---/.exec(agent)?.[1] ?? "") as { tools: string };

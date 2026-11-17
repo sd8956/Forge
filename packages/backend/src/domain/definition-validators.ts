@@ -93,10 +93,19 @@ function architecture(files: FactoryFiles): StageValidation {
   return result(issues, `${plural(adrs, "ADR")} · STRIDE`);
 }
 
+const MOBILE_PLATFORMS = new Set(["mobile", "android", "ios"]);
+
 function testStrategy(files: FactoryFiles): StageValidation {
   const text = files[".factory/test-strategy.md"];
   if (!text?.trim()) return result([missing(".factory/test-strategy.md")], "");
-  return result(/evidence/i.test(text) ? [] : ["test-strategy.md must say which evidence each case type needs"], "Test strategy ready");
+  const issues = /evidence/i.test(text) ? [] : ["test-strategy.md must say which evidence each case type needs"];
+  // The e2e step runs Maestro flows for mobile platforms (maestro-evidence skill), so the strategy must plan for it.
+  const platforms = ((yamlOf(files)?.platforms as unknown[] | undefined) ?? []).map((p) => String(p).toLowerCase());
+  const mobile = platforms.filter((p) => MOBILE_PLATFORMS.has(p));
+  if (mobile.length && !/\bmaestro\b/i.test(text)) {
+    issues.push(`test-strategy.md must use Maestro for the mobile platforms (${mobile.join(", ")}), as the e2e step runs Maestro flows there`);
+  }
+  return result(issues, "Test strategy ready");
 }
 
 /** Prototype screens: HTML files directly under .factory/prototype/. */

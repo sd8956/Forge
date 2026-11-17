@@ -92,7 +92,11 @@ export function readTrace(root: string): Record<string, unknown>[] {
 /** In-memory MemoryAdapter so integration tests never depend on a running Engram. */
 export class StubMemory implements MemoryAdapter {
   constructor(readonly items: Memory[] = []) {}
-  search(): Promise<Memory[]> {
+  /** A plain substring match stands in for Engram's full-text search. */
+  search(_project: string, query: string): Promise<Memory[]> {
+    return Promise.resolve(this.items.filter((m) => `${m.title} ${m.content}`.toLowerCase().includes(query.toLowerCase())));
+  }
+  list(): Promise<Memory[]> {
     return Promise.resolve(this.items);
   }
   listByTask(_project: string, taskId: string): Promise<Memory[]> {

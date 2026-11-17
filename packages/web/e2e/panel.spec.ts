@@ -261,3 +261,60 @@ test("defines a new project stage by stage: changes, an isolated prototype appro
   await expect(page.getByText("Definition merged.")).toBeVisible({ timeout: 20_000 });
   await expect(page.getByRole("link", { name: "Plan the backlog in Execution" })).toBeVisible();
 });
+
+test("shows what the steps saved in Engram, filtered by task or step, with a link to the run", async ({ page }) => {
+  await login(page);
+  await page.getByRole("link", { name: "Memory" }).click();
+  await expect(page.getByRole("heading", { name: "Memory" })).toBeVisible();
+  const list = page.getByRole("region", { name: "Memories" }).or(page.getByLabel("Memories"));
+  await expect(list.getByText("Todo store seam")).toBeVisible();
+  await expect(list.getByText("E2E evidence layout")).toBeVisible();
+  await page.getByLabel("Task or step").fill("TASK-001/review");
+  await expect(list.getByText("Reviewers ask for addTodo naming")).toBeVisible();
+  await expect(list.getByText("Todo store seam")).toBeHidden();
+  await list.getByText("Reviewers ask for addTodo naming").click();
+  await expect(page.getByText("Rename createTodo to addTodo.")).toBeVisible();
+  await page.getByRole("link", { name: "Open the run of TASK-001" }).click();
+  await expect(page.getByRole("heading", { name: "Add and list todos" })).toBeVisible();
+  await page.goBack();
+  await page.getByLabel("Task or step").fill("");
+  await page.getByLabel("Search").fill("evidence");
+  await expect(list.getByText("E2E evidence layout")).toBeVisible();
+  await expect(list.getByText("Todo store seam")).toBeHidden();
+  await page.screenshot({ path: join(shots, "memory.png"), fullPage: true });
+});
+
+test("changes Forge's limits and authentication in Settings, and shows the project's settings from project.yaml", async ({ page }) => {
+  await login(page);
+  await page.getByRole("link", { name: "Settings" }).click();
+  await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
+  const limits = page.getByRole("region", { name: "Sessions and usage" });
+  await limits.getByLabel("Max sessions").fill("2");
+  await limits.getByRole("button", { name: "Save" }).click();
+  await expect(limits.getByRole("status")).toHaveText("Saved.");
+
+  const auth = page.getByRole("region", { name: "Claude authentication" });
+  await auth.getByLabel("Anthropic API key").fill("sk-ant-api03-e2e-ABCDEFGHIJKLMNOPQRSTUVWXYZ-wxyz");
+  await auth.getByRole("button", { name: "Save key" }).click();
+  await expect(auth.getByTestId("api-key-status")).toHaveText("Key ending in wxyz");
+  // The choice is the backend's state: the radio turns on once the backend confirms it.
+  await auth.getByRole("radio", { name: "API key" }).click();
+  await expect(auth.getByRole("radio", { name: "API key" })).toBeChecked();
+  await expect(auth.getByRole("status")).toHaveText("Sessions use the API key.");
+  await auth.getByRole("button", { name: "Remove key" }).click();
+  await expect(auth.getByRole("alert")).toHaveText("Switch back to the subscription before removing the key in use");
+  await auth.getByRole("radio", { name: "Subscription" }).click();
+  await expect(auth.getByRole("radio", { name: "Subscription" })).toBeChecked();
+  await auth.getByRole("button", { name: "Remove key" }).click();
+  await expect(auth.getByTestId("api-key-status")).toHaveText("No API key saved.");
+
+  const projectSettings = page.getByRole("region", { name: "Project settings" });
+  await expect(projectSettings).toContainText(".factory/project.yaml");
+  await expect(projectSettings).toContainText("auto");
+  // Each command on its own row, its name apart from the command.
+  await expect(projectSettings.getByRole("table", { name: "Commands" }).getByRole("row", { name: "check make check" })).toBeVisible();
+  await page.screenshot({ path: join(shots, "settings.png"), fullPage: true });
+
+  await page.getByRole("link", { name: "Execution" }).click();
+  await expect(page.getByTestId("active-sessions")).toContainText("of 2");
+});
