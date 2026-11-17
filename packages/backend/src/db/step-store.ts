@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import type { StepStatus, StepView } from "@forge/shared";
 import { nextStatus, type StepEvent, type TransitionResult } from "../domain/step-machine.js";
 import type { Db } from "./client.js";
@@ -82,11 +82,15 @@ export class StepStore {
   }
 
   incrementStopBlocks(id: string): number {
-    const row = this.get(id);
+    return this.increment(id, "stopBlockCount");
+  }
+
+  /** Atomic counter bump for the per-step metrics. */
+  increment(id: string, field: "stopBlockCount" | "permissionPrompts" | "toolDenials"): number {
+    const column = { stopBlockCount: steps.stopBlockCount, permissionPrompts: steps.permissionPrompts, toolDenials: steps.toolDenials }[field];
+    const row = this.db.update(steps).set({ [field]: sql`${column} + 1` }).where(eq(steps.id, id)).returning({ value: column }).get();
     if (!row) throw new Error(`Unknown step ${id}`);
-    const next = row.stopBlockCount + 1;
-    this.update(id, { stopBlockCount: next });
-    return next;
+    return row.value;
   }
 
   recordEvent(entityId: string, type: string, payload: Record<string, unknown>, entity = "step"): void {
@@ -110,6 +114,8 @@ export function toStepView(row: StepRow): StepView {
     kind: row.kind,
     attempt: row.attempt,
     model: row.model,
+    permissionPrompts: row.permissionPrompts,
+    toolDenials: row.toolDenials,
     agent: row.agent,
     status: row.status,
     tmuxSession: row.tmuxSession,

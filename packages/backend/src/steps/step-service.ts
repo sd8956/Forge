@@ -2,9 +2,11 @@ import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import {
+  type ActivityHookInput,
   ATTENTION_NOTIFICATION_TYPES,
   isTerminalStepStatus,
   type NotificationHookInput,
+  type PreToolUseHookInput,
   type ReportStepInput,
   type SessionEndHookInput,
   type StepKind,
@@ -15,12 +17,17 @@ import type { StepRow } from "../db/schema.js";
 import type { StepStore } from "../db/step-store.js";
 import { reportEvent, type StepEvent } from "../domain/step-machine.js";
 import { decideStop } from "../domain/stop-policy.js";
+import { guardTool } from "../domain/tool-guard.js";
 import { shellQuote, type Tmux } from "../runner/tmux.js";
 import { agentPermissionMode } from "./agent-file.js";
 
 export class StepRequestError extends Error {}
 
 export type StopHookResponse = { decision: "block"; reason: string } | null;
+
+export type PreToolUseResponse = {
+  hookSpecificOutput: { hookEventName: "PreToolUse"; permissionDecision: "deny"; permissionDecisionReason: string };
+} | null;
 
 export type ReportResult = { ok: true; message: string } | { ok: false; message: string };
 
@@ -231,10 +238,33 @@ export class StepService {
     return null;
   }
 
+  /**
+   * Denies tool calls that would stop the step on a permission prompt or leave
+   * the worktree, with a reason the agent can act on. Everything else falls
+   * through to Claude Code's normal permission flow.
+   */
+  onPreToolUse(input: PreToolUseHookInput): PreToolUseResponse {
+    const step = this.store.getBySessionId(input.session_id);
+    if (!step || isTerminalStepStatus(step.status)) return null;
+    const result = guardTool(input.tool_name, input.tool_input, step.worktreePath);
+    if (result.allow) return null;
+    const count = this.store.increment(step.id, "toolDenials");
+    this.store.recordEvent(step.id, "tool_denied", { tool: input.tool_name, rule: result.rule, input: input.tool_input, count });
+    return { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: result.reason } };
+  }
+
+  /** A tool finished or the person typed: a step waiting for attention is working again. */
+  onActivity(input: ActivityHookInput): void {
+    const step = this.store.getBySessionId(input.session_id);
+    if (step?.status !== "needs_human") return;
+    this.transition(step.id, "resume_work", {}, { cause: input.hook_event_name, tool: input.tool_name ?? null });
+  }
+
   onNotification(input: NotificationHookInput): void {
     const step = this.stepForHook(input.session_id, "Notification", input);
     if (!step) return;
     const type = input.notification_type ?? "";
+    if (type === "permission_prompt") this.store.increment(step.id, "permissionPrompts");
     if ((ATTENTION_NOTIFICATION_TYPES as readonly string[]).includes(type) && step.status === "running") {
       this.transition(step.id, "attention", {}, { cause: type, message: input.message ?? null });
     }

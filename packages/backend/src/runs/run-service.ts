@@ -103,6 +103,14 @@ export class RunService implements StepPolicy {
   onStepChanged(step: StepRow): void {
     if (!step.runId || !this.ready) return;
     const runId = step.runId;
+    if (step.status === "running") {
+      // The step that needed a person is working again (a tool ran or the person typed).
+      const run = this.deps.runs.get(runId);
+      if (run?.status === "needs_human" && this.deps.runs.latestStep(runId)?.id === step.id) {
+        this.deps.runs.transition(runId, "resume", {}, { cause: "step_resumed", step: step.kind });
+      }
+      return;
+    }
     if (step.status === "needs_human") {
       const run = this.deps.runs.get(runId);
       if (run?.status === "running") this.deps.runs.transition(runId, "attention", {}, { cause: "step_needs_human", step: step.kind });

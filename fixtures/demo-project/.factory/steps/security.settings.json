@@ -67,6 +67,53 @@
           }
         ]
       }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash|Read|Write|Edit|MultiEdit|Glob|Grep",
+        "hooks": [
+          {
+            "type": "http",
+            "url": "{{FORGE_URL}}/hooks/pre-tool-use",
+            "headers": {
+              "x-forge-token": "{{FORGE_TOKEN}}"
+            },
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "http",
+            "url": "{{FORGE_URL}}/hooks/activity",
+            "headers": {
+              "x-forge-token": "{{FORGE_TOKEN}}"
+            },
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "http",
+            "url": "{{FORGE_URL}}/hooks/activity",
+            "headers": {
+              "x-forge-token": "{{FORGE_TOKEN}}"
+            },
+            "timeout": 5
+          }
+        ]
+      }
     ]
+  },
+  "attribution": {
+    "commit": "",
+    "pr": ""
   }
 }
