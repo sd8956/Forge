@@ -7,6 +7,7 @@ const PATHS: Record<string, string> = {
   play: "M8 5l11 7-11 7z",
   stop: "M6 6h12v12H6z",
   external: "M14 4h6v6M20 4l-9 9M18 14v5H5V6h5",
+  pencil: "M4 20h4L19 9l-4-4L4 16zM13 7l4 4",
 };
 
 export function Icon({ name, size = 16, label }: { name: keyof typeof PATHS; size?: number; label?: string }) {

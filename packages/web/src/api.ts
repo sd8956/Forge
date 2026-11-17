@@ -1,6 +1,6 @@
-import type { PlanView, QueueView, RunView, StepView } from "@forge/shared";
+import type { DefinitionStage, DefinitionView, PlanView, QueueView, RunView, StepView } from "@forge/shared";
 
-export type { PlanView, QueueView };
+export type { DefinitionStage, DefinitionView, PlanView, QueueView };
 
 export class UnauthorizedError extends Error {}
 
@@ -71,7 +71,19 @@ export const api = {
   startOrchestrator: (projectId: string, prompt?: string) =>
     request<{ session: OrchestratorSession }>(`/projects/${projectId}/orchestrator`, { method: "POST", body: JSON.stringify(prompt ? { prompt } : {}) }),
   stopOrchestrator: (projectId: string) => request<{ stopped: boolean }>(`/projects/${projectId}/orchestrator`, { method: "DELETE" }),
+  definition: (projectId: string) => request<DefinitionView>(`/projects/${projectId}/definition`),
+  beginDefinition: (path: string, idea: string) => request<DefinitionView>("/definitions", { method: "POST", body: JSON.stringify({ path, idea }) }),
+  approveStage: (projectId: string, stage: DefinitionStage) => request<DefinitionView>(`/projects/${projectId}/definition/${stage}/approve`, { method: "POST", body: "{}" }),
+  requestChanges: (projectId: string, stage: DefinitionStage, feedback: string) =>
+    request<DefinitionView>(`/projects/${projectId}/definition/${stage}/changes`, { method: "POST", body: JSON.stringify({ feedback }) }),
+  retryStage: (projectId: string, stage: DefinitionStage) => request<DefinitionView>(`/projects/${projectId}/definition/${stage}/retry`, { method: "POST", body: "{}" }),
+  approveScreen: (projectId: string, screen: string) => request<DefinitionView>(`/projects/${projectId}/definition/screens/approve`, { method: "POST", body: JSON.stringify({ screen }) }),
 };
+
+/** URL of a file under the definition worktree's .factory/ (path relative to .factory/). */
+export function definitionFileUrl(projectId: string, path: string): string {
+  return `/projects/${projectId}/definition/files/${path.split("/").map(encodeURIComponent).join("/")}`;
+}
 
 export interface OrchestratorSession {
   projectId: string;

@@ -174,3 +174,56 @@ test("opens the orchestrator from Launch tasks and types into its session", asyn
   await pane.getByRole("button", { name: "Stop" }).click();
   await expect(pane).toBeHidden();
 });
+
+test("defines a new project stage by stage: changes, an isolated prototype approved screen by screen, and the definition PR", async ({ page }) => {
+  test.setTimeout(120_000);
+  await login(page);
+  await page.getByRole("link", { name: "Definition" }).click();
+  await page.getByLabel("Repository path").fill(state.newApp);
+  await page.getByLabel("The idea, in your words").fill("A link shortener for a small team: paste a URL, get a short link.");
+  await page.getByRole("button", { name: "Start the definition" }).click();
+  await expect(page.getByRole("heading", { name: "Definition" })).toBeVisible();
+
+  const gate = page.getByRole("region", { name: "Gate" });
+  const approve = async (stage: string) => {
+    await expect(page.getByTestId(`stage-${stage}`)).toContainText("In review", { timeout: 20_000 });
+    await gate.getByRole("button", { name: "Approve and continue" }).click();
+    await expect(page.getByTestId(`stage-${stage}`)).not.toContainText("In review");
+  };
+
+  // Intake: ask for a change, and the relaunched session takes it into account.
+  await expect(page.getByTestId("stage-intake")).toContainText("In review", { timeout: 20_000 });
+  await expect(page.getByTestId("definition-document")).toContainText("A link shortener for a small team");
+  await gate.getByRole("button", { name: "Request changes" }).click();
+  await gate.getByLabel("What should change").fill("Say it is web only");
+  await gate.getByRole("button", { name: "Send the changes" }).click();
+  await expect(page.getByTestId("definition-document")).toContainText("Changed after review: Say it is web only", { timeout: 20_000 });
+  await approve("intake");
+  await expect(page.getByTestId("stage-intake")).toContainText("shortener · web");
+  await expect(page.getByLabel(".factory files")).toContainText("✓ intake.md");
+
+  for (const stage of ["requirements", "architecture", "test_strategy"]) await approve(stage);
+
+  await expect(page.getByTestId("stage-design")).toContainText("In review", { timeout: 20_000 });
+  await page.getByRole("tab", { name: "Prototype" }).click();
+  const frame = page.frameLocator('iframe[title="Prototype index.html"]');
+  await expect(frame.getByRole("heading", { name: "Shorten a link" })).toBeVisible();
+  const iframe = page.locator('iframe[title="Prototype index.html"]');
+  await expect(iframe).toHaveAttribute("sandbox", "allow-scripts");
+  // Its scripts run, but in an opaque origin: it cannot reach the panel.
+  const inner = page.frames().find((f) => f.url().includes("/prototype/index.html"));
+  if (!inner) throw new Error("prototype frame not found");
+  // Expressions as strings: they run inside the frame, and the e2e tsconfig has no DOM types.
+  expect(await inner.evaluate("document.title")).toBe("prototype ran");
+  expect(await inner.evaluate("(() => { try { return window.parent.document.title; } catch { return 'blocked'; } })()")).toBe("blocked");
+  await page.screenshot({ path: join(shots, "definition.png"), fullPage: true });
+
+  await gate.getByRole("button", { name: "Approve and continue" }).click();
+  await expect(gate.getByRole("alert")).toContainText("Approve every screen first: index.html, stats.html");
+  await page.getByRole("button", { name: "Approve screen index.html" }).click();
+  await page.getByRole("button", { name: "Approve screen stats.html" }).click();
+  await approve("design");
+  await approve("backlog");
+  await expect(page.getByRole("link", { name: "Definition PR" })).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText("Definition approved.")).toBeVisible();
+});

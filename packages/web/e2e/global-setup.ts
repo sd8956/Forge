@@ -10,6 +10,7 @@ export interface E2eState {
   url: string;
   token: string;
   project: string;
+  newApp: string;
   root: string;
   ghState: string;
   pid: number;
@@ -33,6 +34,13 @@ export default async function globalSetup(): Promise<void> {
   git("add", ".");
   git("commit", "-qm", "init");
   git("remote", "add", "origin", "git@github.com:example/demo-project.git");
+
+  // An empty clone of a new repository, for the Definition panel.
+  const newApp = join(root, "newapp");
+  execFileSync("git", ["init", "-q", "--bare", "-b", "main", join(root, "newapp-origin.git")]);
+  execFileSync("mkdir", ["-p", newApp]);
+  execFileSync("git", ["-C", newApp, "init", "-q", "-b", "main"]);
+  execFileSync("git", ["-C", newApp, "remote", "add", "origin", join(root, "newapp-origin.git")]);
 
   const ghState = join(root, "gh.json");
   writeFileSync(ghState, JSON.stringify({ login: "sd8956", prs: { "7": { state: "OPEN", headRefOid: "abc1234", statusCheckRollup: [], comments: [], issueComments: [], reviews: [], body: "" } }, logs: {} }));
@@ -70,7 +78,7 @@ export default async function globalSetup(): Promise<void> {
     await new Promise((r) => setTimeout(r, 100));
   }
   const token = readFileSync(join(root, "home", "token"), "utf8").trim();
-  const state: E2eState = { url, token, project, root, ghState, pid: child.pid ?? 0, socket };
+  const state: E2eState = { url, token, project, newApp, root, ghState, pid: child.pid ?? 0, socket };
   execFileSync("mkdir", ["-p", join(REPO, ".forge-e2e")]);
   writeFileSync(STATE_FILE, JSON.stringify(state));
 }
