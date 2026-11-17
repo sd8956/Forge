@@ -20,7 +20,7 @@ import { loadPipeline, modelFor, parseTaskSize, stepById, type Pipeline } from "
 import { runShell } from "../runner/shell.js";
 import { branchFor, ensureWorktree } from "../runner/worktree.js";
 import type { StepPolicy, StepService } from "../steps/step-service.js";
-import { parseDependencies, unmergedDependencies } from "./dependencies.js";
+import { parseDependencies, unfinishedDependencyRuns, unmergedDependencies } from "./dependencies.js";
 import { isTrusted } from "./trust.js";
 
 const git = promisify(execFile);
@@ -68,7 +68,8 @@ export class RunService implements StepPolicy {
     const pipeline = this.validateProject(projectPath, req.taskId);
     const baseBranch = (await git("git", ["-C", projectPath, "rev-parse", "--abbrev-ref", "HEAD"], { encoding: "utf8" })).stdout.trim();
     const deps = parseDependencies(readFileSync(join(projectPath, ".factory", "backlog", `${req.taskId}.md`), "utf8"));
-    const unmerged = await unmergedDependencies(projectPath, baseBranch, deps);
+    const unfinished = unfinishedDependencyRuns(this.deps.runs.list(), projectPath, deps);
+    const unmerged = [...new Set([...unfinished, ...(await unmergedDependencies(projectPath, baseBranch, deps))])];
     if (unmerged.length) {
       const list = unmerged.join(", ");
       throw new RunRequestError(

@@ -172,6 +172,16 @@ describe("pipeline run with a fake claude", () => {
     expect((await ctx.api.request("POST", "/runs", { projectPath: ctx.project, taskId: "TASK-002" })).status).toBe(201);
   });
 
+  it("refuses a task whose dependency has a run that has not finished, even before that run commits", async () => {
+    const ctx = await setup({ plan: ["wait-release"] });
+    const first = await ctx.api.startRun(ctx.project, "TASK-001");
+    // feat/TASK-001 exists and has no commits yet, so git alone would call it merged.
+    const res = await ctx.api.request("POST", "/runs", { projectPath: ctx.project, taskId: "TASK-002" });
+    expect(res.status).toBe(400);
+    expect((res.body as { message: string }).message).toContain("TASK-002 depends on TASK-001, which is not merged into main yet.");
+    expect((await ctx.api.runs()).map((r) => r.id)).toEqual([first.id]);
+  });
+
   it("accepts a dependency merged with a merge commit", async () => {
     const ctx = await setup();
     const git = (...args: string[]) => execFileSync("git", ["-C", ctx.project, "-c", "user.name=t", "-c", "user.email=t@example.invalid", ...args]);

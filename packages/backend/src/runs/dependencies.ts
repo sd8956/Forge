@@ -36,3 +36,13 @@ export async function unmergedDependencies(projectPath: string, baseBranch: stri
   }
   return unmerged;
 }
+
+/**
+ * Dependencies whose Forge run has not finished. A fresh task branch with no
+ * commits yet is an ancestor of the base branch, so git alone would call it
+ * merged; a run that is still open or waiting for review says it is not.
+ */
+export function unfinishedDependencyRuns(runs: { projectPath: string; taskId: string; status: string }[], projectPath: string, deps: string[]): string[] {
+  const pending = new Set(["queued", "running", "needs_human", "waiting_review"]);
+  return deps.filter((dep) => runs.some((r) => r.projectPath === projectPath && r.taskId === dep && pending.has(r.status)));
+}
