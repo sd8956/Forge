@@ -42,3 +42,14 @@ steps:
     model: sonnet
     settings: steps/pr.settings.json
     exit: { requires: [pr.md], pr_created: true }
+
+# What runs when the PR watcher finds new review feedback or a failed check.
+review:
+  max_rounds: 3
+  fix:
+    id: review_fix
+    agent: forge-review-fixer
+    model: sonnet
+    settings: steps/review-fixer.settings.json
+    exit: { requires: [replies.md], command: make check, threads_answered: true }
+  then: [security, e2e, pr]
