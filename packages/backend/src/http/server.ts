@@ -35,6 +35,7 @@ interface ServerDeps {
   archiveDir: (runId: string) => string;
   threads: PrThreadStore;
   bus: EventBus;
+  tmuxSocket: string;
   logger?: boolean;
 }
 
@@ -85,7 +86,7 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     if ((changesState || websocket) && !isLocalOrigin(request.headers.origin, deps.port())) return refuse(403, "forbidden_origin");
   });
 
-  await registerWsRoutes(app, { bus: deps.bus });
+  await registerWsRoutes(app, { bus: deps.bus, store: deps.store, tmuxSocket: deps.tmuxSocket });
 
   await registerPanelRoutes(app, {
     token: deps.token,

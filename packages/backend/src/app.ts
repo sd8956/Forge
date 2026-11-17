@@ -93,6 +93,7 @@ export async function startBackend(config: ForgeConfig, opts: { logger?: boolean
     archiveDir: (runId) => archiveDirFor(config.home, runId),
     threads,
     bus,
+    tmuxSocket: config.tmuxSocket,
     logger: opts.logger ?? false,
   });
   await app.listen({ host: config.host, port: config.port });

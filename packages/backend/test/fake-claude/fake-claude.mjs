@@ -65,6 +65,10 @@ const template = parse(/```yaml\n---\n([\s\S]*?)\n---\n```/.exec(input)?.[1] ?? 
 const script = JSON.parse(process.env.FAKE_CLAUDE_SCRIPT ?? "{}");
 const behaviour = script[kind]?.[attempt - 1] ?? script.default ?? "done";
 
+// Something on the screen for the terminal bridge, and a record of what a person types.
+process.stdout.write(`fake claude ready: ${kind} attempt ${attempt}\r\n`);
+process.stdin.on("data", (chunk) => trace("stdin", { data: chunk.toString() }));
+
 trace("started", {
   agent: flags["--agent"],
   prompt: positionals[0],
