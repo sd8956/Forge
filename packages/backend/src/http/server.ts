@@ -11,6 +11,8 @@ import type { PlanStore } from "../db/plan-store.js";
 import type { OrchestratorService } from "../orchestrator/orchestrator-service.js";
 import type { ForgeConfig } from "../config.js";
 import { registerOrchestratorRoutes } from "./orchestrator-routes.js";
+import { registerDefinitionRoutes } from "./definition-routes.js";
+import type { DefinitionService } from "../definition/definition-service.js";
 import type { PrThreadStore } from "../db/pr-thread-store.js";
 import type { ProjectStore } from "../db/project-store.js";
 import { DuplicateRunError, toRunView, type RunStore } from "../db/run-store.js";
@@ -48,6 +50,7 @@ interface ServerDeps {
   scheduler: SchedulerService;
   plans: PlanStore;
   orchestrator: OrchestratorService;
+  definition: DefinitionService;
   config: ForgeConfig;
   bus: EventBus;
   tmuxSocket: string;
@@ -119,6 +122,8 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     },
     onOrchestratorControl: (projectId) => deps.plans.recordEvent("plan", projectId, "orchestrator_control", { via: "panel" }),
   });
+
+  registerDefinitionRoutes(app, deps.definition);
 
   registerOrchestratorRoutes(app, {
     config: deps.config,
@@ -200,8 +205,9 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
   app.post("/mcp/:stepId", async (request, reply) => {
     const params = stepIdParams.safeParse(request.params);
     if (!params.success) return badRequest(reply, params.error);
-    if (!deps.store.get(params.data.stepId)) return reply.code(404).send({ error: "unknown_step" });
-    const server = createFactoryMcpServer(params.data.stepId, deps.service);
+    const step = deps.store.get(params.data.stepId);
+    if (!step) return reply.code(404).send({ error: "unknown_step" });
+    const server = createFactoryMcpServer(params.data.stepId, deps.service, step.kind);
     const transport = new StreamableHTTPServerTransport({ enableJsonResponse: true }); // no sessionIdGenerator = stateless
     reply.hijack();
     reply.raw.on("close", () => {

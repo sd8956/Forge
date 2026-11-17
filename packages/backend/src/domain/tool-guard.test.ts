@@ -99,3 +99,26 @@ describe("guardTool: file tools", () => {
     expect(guardTool("mcp__factory__report_step", { status: "done" }, WT)).toEqual({ allow: true });
   });
 });
+
+describe("guardTool: definition stages write only inside .factory/", () => {
+  const root = `${WT}/.factory`;
+  it("allows writes under .factory/ and reads anywhere in the worktree", () => {
+    expect(guardTool("Write", { file_path: `${WT}/.factory/requirements.md` }, WT, root)).toEqual({ allow: true });
+    expect(guardTool("Edit", { file_path: ".factory/prototype/index.html" }, WT, root)).toEqual({ allow: true });
+    expect(guardTool("Read", { file_path: `${WT}/src/server.js` }, WT, root)).toEqual({ allow: true });
+  });
+
+  it.each([
+    ["Write", { file_path: `${WT}/src/server.js` }],
+    ["Edit", { file_path: "CLAUDE.md" }],
+    ["MultiEdit", { file_path: `${WT}/.claude/agents/forge-planner.md` }],
+    ["Write", { file_path: `${WT}/.factory/steps/definition.settings.json` }],
+    ["Write", { file_path: `${WT}/.factory/../package.json` }],
+  ])("denies %s %o", (tool, input) => {
+    expect(guardTool(tool, input, WT, root)).toMatchObject({ allow: false, rule: "outside_factory" });
+  });
+
+  it("leaves pipeline steps free to write anywhere in the worktree", () => {
+    expect(guardTool("Write", { file_path: `${WT}/src/server.js` }, WT)).toEqual({ allow: true });
+  });
+});

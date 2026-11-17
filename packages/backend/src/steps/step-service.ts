@@ -10,6 +10,7 @@ import {
   type ReportStepInput,
   type SessionEndHookInput,
   type StopFailureHookInput,
+  type DefinitionStage,
   type StepKind,
   type StopHookInput,
 } from "@forge/shared";
@@ -38,7 +39,8 @@ export interface StepLaunchSpec {
   runId: string | null;
   projectPath: string;
   taskId: string;
-  kind: StepKind;
+  /** A pipeline step, or `def_<stage>` for a definition stage. */
+  kind: StepKind | `def_${DefinitionStage}`;
   attempt: number;
   agent: string;
   model: string;
@@ -269,7 +271,9 @@ export class StepService {
   onPreToolUse(input: PreToolUseHookInput): PreToolUseResponse {
     const step = this.store.getBySessionId(input.session_id);
     if (!step || isTerminalStepStatus(step.status)) return null;
-    const result = guardTool(input.tool_name, input.tool_input, step.worktreePath);
+    // Definition stages may only write inside .factory/; Forge owns everything else in the worktree.
+    const writeRoot = step.kind.startsWith("def_") ? join(step.worktreePath, ".factory") : undefined;
+    const result = guardTool(input.tool_name, input.tool_input, step.worktreePath, writeRoot);
     if (result.allow) return null;
     const count = this.store.increment(step.id, "toolDenials");
     this.store.recordEvent(step.id, "tool_denied", { tool: input.tool_name, rule: result.rule, input: input.tool_input, count });

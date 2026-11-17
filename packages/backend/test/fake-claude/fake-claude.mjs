@@ -60,7 +60,7 @@ const field = (name) => new RegExp(`^- ${name}: \`?([^\`\\n]+)\`?`, "m").exec(in
 const kind = /^- Step: `([a-z0-9_-]+)`/m.exec(input)?.[1] ?? "unknown";
 const attempt = Number(field("Attempt") ?? 1);
 const outputDir = field("Output directory");
-const taskId = /^# Step input: \S+ — (TASK-\d+)/m.exec(input)?.[1];
+const taskId = /^# Step input: \S+ — (TASK-\d+|DEF-[0-9a-f]+)/m.exec(input)?.[1];
 const template = parse(/```yaml\n---\n([\s\S]*?)\n---\n```/.exec(input)?.[1] ?? "{}") ?? {};
 
 const script = JSON.parse(process.env.FAKE_CLAUDE_SCRIPT ?? "{}");
@@ -100,7 +100,49 @@ function testPlanPath() {
   return planOutput ? join(dirname(planOutput), "test-plan.md") : undefined;
 }
 
+/** Valid `.factory/` files for each definition stage, like a stage session would write them. */
+const DEFINITION_FILES = {
+  def_intake: {
+    ".factory/intake.md": "# Intake\n\nA link shortener for a small team. Web only.\n",
+    ".factory/project.yaml": "name: shortener\nplatforms: [web]\n",
+  },
+  def_requirements: {
+    ".factory/requirements.md":
+      "# Requirements\n\n### FR-001 Shorten a link\n\n- Given a valid URL, when I press \"Shorten\", then I see a short link.\n\n### FR-002 Open a short link\n\n- Given a short link, when I open it, then I am redirected.\n\n## Non-functional requirements\n\n- NFR-01 Performance: redirects answer in under 50 ms (p95).\n",
+  },
+  def_architecture: {
+    ".factory/architecture.md": "# Architecture\n\nNode server in src/, page in public/.\n",
+    ".factory/adr/0001-node.md": "# ADR 0001 — Node without dependencies\n",
+    ".factory/threat-model.md":
+      "# Threat model\n\n| Threat | STRIDE |\n| --- | --- |\n| a | Spoofing |\n| b | Tampering |\n| c | Repudiation |\n| d | Information disclosure |\n| e | Denial of service |\n| f | Elevation of privilege |\n",
+    ".factory/project.yaml": "name: shortener\nplatforms: [web]\ncommands:\n  check: make check\n  e2e: make e2e\n  up: make up\n",
+  },
+  def_test_strategy: { ".factory/test-strategy.md": "# Test strategy\n\nPlaywright for the web. Evidence: a screenshot per step.\n" },
+  def_design: {
+    ".factory/design/tokens.json": '{"color": {"brand": "#c2410c"}}\n',
+    ".factory/design/components.md": "# Components\n\n- Link form\n",
+    ".factory/prototype/index.html": "<!doctype html><title>Shorten</title><h1>Shorten a link</h1><script>document.title = 'prototype ran'</script>\n",
+    ".factory/prototype/stats.html": "<!doctype html><title>Stats</title><h1>Link stats</h1>\n",
+  },
+  def_backlog: {
+    ".factory/backlog/TASK-001.md": "# TASK-001 — Shorten and open links\n\n- Covers: FR-001, FR-002, NFR-01\n- Size: S\n- Depends on: none\n\n## Acceptance criteria\n\n- AC-1 (FR-001) Given a URL, when I shorten it, then I see a link.\n",
+  },
+};
+
+function produceDefinition(status, { valid = true } = {}) {
+  const written = DEFINITION_FILES[kind] ?? {};
+  const entries = Object.entries(written).slice(0, valid ? undefined : -1);
+  // When the person asked for changes, the fake records the request in the first file it writes.
+  const feedback = /## Changes the person asked for\n\n[^\n]*\n\n> ([^\n]+)/.exec(input)?.[1];
+  const files = entries.map(([rel, content], i) => writeFile(rel, i === 0 && feedback && rel.endsWith(".md") ? `${content}\nChanged after review: ${feedback}\n` : content));
+  const outputMd = join(outputDir, "output.md");
+  const summary = `Fake ${kind} attempt ${attempt}: ${status}`;
+  writeFile(outputMd, `---\n${stringify({ ...template, step: kind, task: taskId, attempt, status, summary, artifacts: files })}---\n\n${summary}\n`);
+  return { status, summary, artifacts: [outputMd, ...files] };
+}
+
 function produce(status) {
+  if (kind.startsWith("def_")) return produceDefinition(status);
   const files = [];
   const extras = {};
   const out = (name, content) => files.push(writeFile(join(outputDir, name), content));
@@ -190,7 +232,7 @@ async function reportStep(args) {
   const server = mcpConfig.mcpServers.factory;
   const client = new Client({ name: "fake-claude", version: "0.0.0" });
   await client.connect(new StreamableHTTPClientTransport(new URL(server.url), { requestInit: { headers: server.headers } }));
-  const result = await client.callTool({ name: "report_step", arguments: args });
+  const result = await client.callTool({ name: kind.startsWith("def_") ? "report_stage" : "report_step", arguments: args });
   trace("report_step", { kind, attempt, status: args.status, isError: result.isError ?? false, text: result.content?.[0]?.text });
   await client.close();
   return result;
@@ -294,6 +336,20 @@ async function main() {
       return;
     case "hang":
       break;
+    case "def-invalid-then-fix": {
+      // The first report misses a file; Forge rejects it with the issues, and the session fixes it.
+      const rejected = await reportStep(produceDefinition("done", { valid: false }));
+      trace("def_rejected", { isError: rejected.isError ?? false, text: rejected.content?.[0]?.text });
+      await finish("done");
+      break;
+    }
+    case "write-outside": {
+      const outside = await hook("PreToolUse", { tool_name: "Write", tool_input: { file_path: join(process.cwd(), "src", "hack.js"), content: "x" } });
+      const inside = await hook("PreToolUse", { tool_name: "Write", tool_input: { file_path: join(process.cwd(), ".factory", "intake.md"), content: "x" } });
+      trace("guard", { outside, inside });
+      await finish("done");
+      break;
+    }
     case "rate-limit":
       // Claude Code ends the turn on a usage limit and waits; only the StopFailure hook says why.
       await hook("StopFailure", { error: "rate_limit", last_assistant_message: "You've hit your usage limit" });

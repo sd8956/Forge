@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
@@ -37,6 +37,27 @@ describe("demo-project fixture contract", () => {
   it("lets the pr step look up an existing PR and development run the e2e suite without a prompt", () => {
     expect(steps.find((s) => s.step.id === "pr")?.settings.permissions.allow).toContain("Bash(gh pr list:*)");
     expect(steps.find((s) => s.step.id === "development")?.settings.permissions.allow).toContain("Bash(make e2e:*)");
+  });
+
+  it("has agent files whose frontmatter parses and names the file", () => {
+    for (const file of readdirSync(join(FIXTURE, ".claude", "agents"))) {
+      const text = readFileSync(join(FIXTURE, ".claude", "agents", file), "utf8");
+      const frontmatter = parse(/^---\n([\s\S]*?)\n---/.exec(text)?.[1] ?? "") as { name: string; description: string };
+      expect(frontmatter.name).toBe(file.replace(/\.md$/, ""));
+      expect(typeof frontmatter.description).toBe("string");
+    }
+  });
+
+  it("gives definition stages write tools and the factory server, no Bash, and no Stop hook so they can ask the person", () => {
+    for (const stage of ["intake", "requirements", "architecture", "test-strategy", "design", "backlog"]) {
+      const text = readFileSync(join(FIXTURE, ".claude", "agents", `forge-def-${stage}.md`), "utf8");
+      const frontmatter = parse(/^---\n([\s\S]*?)\n---/.exec(text)?.[1] ?? "") as { tools: string; permissionMode: string };
+      expect(frontmatter.tools.split(",").map((t) => t.trim())).toEqual(["Read", "Grep", "Glob", "Write", "Edit", "mcp__factory"]);
+    }
+    const settings = JSON.parse(readFileSync(join(FIXTURE, ".factory", "steps", "definition.settings.json"), "utf8")) as Settings;
+    expect(settings.hooks.Stop).toBeUndefined();
+    expect(settings.hooks.PreToolUse?.[0]?.matcher).toContain("Write");
+    expect(settings.permissions.deny).toEqual(expect.arrayContaining(["Bash(git commit:*)", "Bash(git push:*)", "Bash(gh:*)"]));
   });
 
   it("gives the orchestrator read-only tools and the factory MCP server, never Bash or writes", () => {
