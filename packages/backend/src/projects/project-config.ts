@@ -13,8 +13,13 @@ export const projectConfigSchema = z.looseObject({
     .looseObject({
       /** Lower cap on this project's parallel sessions; Forge's global cap still applies. */
       max_concurrency: z.number().int().min(1).max(10).optional(),
+      /**
+       * How pipeline steps answer permission prompts: `auto` (default) lets Claude Code's classifier decide, within
+       * Forge's deny rules and tool guard; `agent` uses the agent's own mode and locks auto mode (ADR 0010).
+       */
+      permission_mode: z.enum(["auto", "agent"]).default("auto"),
     })
-    .default({}),
+    .default({ permission_mode: "auto" }),
   review: z
     .looseObject({
       /** GitHub logins whose PR comments the review loop handles. Empty means nobody. */

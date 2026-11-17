@@ -22,7 +22,8 @@ Forge is a local software factory that drives Claude Code sessions in tmux. Sour
 - State changes only through the transition tables in `src/domain/`; never update `status` directly.
 - Nothing reads the tmux screen. Step results arrive only through `report_step` and hooks.
 - The backend listens on `127.0.0.1` only and every route but `/health` needs the local token.
-- Steps never run with `bypassPermissions` or `auto`; the runner passes `--permission-mode` from the agent.
+- Steps never run with `bypassPermissions`. Pipeline steps run with `--permission-mode auto` unless the project sets
+  `policies.permission_mode: agent`, which uses the agent's mode and locks auto (ADR 0010).
 - Tests: unit for `src/domain`, integration with the fake `claude` (`packages/backend/test/fake-claude/`)
   in real tmux on a throwaway socket. Scratch state goes in `mktemp -d`, never in the repo.
 

@@ -20,6 +20,7 @@ import { loadPipeline, modelFor, parseTaskSize, stepById, type Pipeline } from "
 import { runShell } from "../runner/shell.js";
 import { branchFor, ensureWorktree } from "../runner/worktree.js";
 import type { StepPolicy, StepService } from "../steps/step-service.js";
+import { loadProjectConfig } from "../projects/project-config.js";
 import { parseDependencies, unfinishedDependencyRuns, unmergedDependencies } from "./dependencies.js";
 import { isTrusted } from "./trust.js";
 
@@ -296,7 +297,17 @@ export class RunService implements StepPolicy {
       input,
       prompt: `Read ${outputDir}/input.md and run the step.`,
       timeoutMs: Math.round(def.timeout_minutes * 60_000),
+      permissionMode: this.permissionPolicy(run.projectPath) === "auto" ? "auto" : undefined,
     });
+  }
+
+  /** `policies.permission_mode` of the project (ADR 0010); a missing or broken project.yaml keeps the default. */
+  private permissionPolicy(projectPath: string): "auto" | "agent" {
+    try {
+      return loadProjectConfig(projectPath).policies.permission_mode;
+    } catch {
+      return "auto";
+    }
   }
 
   /** 1-based number of this step kind for the task, across runs, so output directories never collide. */

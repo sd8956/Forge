@@ -41,6 +41,8 @@ export interface StepLaunchSpec {
   taskId: string;
   /** A pipeline step, or `def_<stage>` for a definition stage. */
   kind: StepKind | `def_${DefinitionStage}`;
+  /** `auto` overrides the agent's permission mode (the project's default, ADR 0010); unset uses the agent's. */
+  permissionMode?: "auto" | undefined;
   attempt: number;
   agent: string;
   model: string;
@@ -68,11 +70,15 @@ const STATUS_LINE_SCRIPT = join(import.meta.dirname, "..", "..", "scripts", "for
  * that forwards the usage window. The status line reads the URL and token from
  * a private file, so the token never appears in a command line.
  */
-export function withForgeSignals(settings: Record<string, unknown>, url: string, token: string, statusLineConfig: string): Record<string, unknown> {
+export function withForgeSignals(settings: Record<string, unknown>, url: string, token: string, statusLineConfig: string, opts: { auto: boolean } = { auto: false }): Record<string, unknown> {
   const hooks = { ...((settings.hooks as Record<string, unknown> | undefined) ?? {}) };
+  // Bypass is never allowed. Auto is locked unless the step runs in auto, so "switch to auto mode" in a prompt does nothing.
+  const permissions: Record<string, unknown> = { ...((settings.permissions as Record<string, unknown> | undefined) ?? {}), disableBypassPermissionsMode: "disable" };
+  if (!opts.auto) permissions.disableAutoMode = "disable";
   hooks.StopFailure = [{ hooks: [{ type: "http", url: `${url}/hooks/stop-failure`, headers: { "x-forge-token": token }, timeout: 10 }] }];
   return {
     ...settings,
+    permissions,
     hooks,
     statusLine: { type: "command", command: [process.execPath, STATUS_LINE_SCRIPT, statusLineConfig].map(shellQuote).join(" "), padding: 0 },
   };
@@ -110,6 +116,8 @@ export class StepService {
   /** Called after a step stopped on a usage limit; the scheduler pauses the queue. */
   onRateLimit: (step: StepRow) => void = () => undefined;
   private readonly timers = new Map<string, NodeJS.Timeout>();
+  /** Permission mode of a step between its launch and the launch transition, for the audit event. */
+  private readonly launchedModes = new Map<string, string>();
   private sweepTimer: NodeJS.Timeout | undefined;
   private readonly pending = new Set<Promise<unknown>>();
   private readonly now: () => number;
@@ -146,12 +154,15 @@ export class StepService {
     });
 
     try {
-      const permissionMode = agentPermissionMode(spec.worktreePath, spec.agent);
+      // The agent file is always checked (it may never ask for bypassPermissions), even when the project runs in auto.
+      const permissionMode = spec.permissionMode ?? agentPermissionMode(spec.worktreePath, spec.agent);
+      if (spec.permissionMode) agentPermissionMode(spec.worktreePath, spec.agent);
       mkdirSync(dirname(spec.inputPath), { recursive: true });
       writeFileSync(spec.inputPath, spec.input);
-      const files = this.renderSessionFiles(row, spec.settingsTemplate);
+      const files = this.renderSessionFiles(row, spec.settingsTemplate, permissionMode === "auto");
       // A stale session with the same name can only belong to a finished step.
       await this.deps.tmux.killSession(row.tmuxSession);
+      this.launchedModes.set(row.id, permissionMode);
       await this.deps.tmux.newSession({
         name: row.tmuxSession,
         cwd: spec.worktreePath,
@@ -165,7 +176,8 @@ export class StepService {
     }
 
     const startedAt = this.now();
-    this.transition(row.id, "launch", { startedAt, deadlineAt: startedAt + row.timeoutMs });
+    this.transition(row.id, "launch", { startedAt, deadlineAt: startedAt + row.timeoutMs }, { permissionMode: this.launchedModes.get(row.id) ?? null });
+    this.launchedModes.delete(row.id);
     this.armTimeout(row.id, row.timeoutMs);
     return this.mustGet(row.id);
   }
@@ -174,7 +186,7 @@ export class StepService {
    * Renders the step's settings template and its MCP config into the backend
    * home (outside the worktree), because both carry the local token and port.
    */
-  private renderSessionFiles(row: StepRow, settingsTemplate: string) {
+  private renderSessionFiles(row: StepRow, settingsTemplate: string, auto: boolean) {
     if (!existsSync(settingsTemplate)) throw new Error(`Missing step settings template: ${settingsTemplate}`);
     const dir = join(this.deps.config.home, "steps", row.id);
     mkdirSync(dir, { recursive: true, mode: 0o700 });
@@ -182,7 +194,7 @@ export class StepService {
     const rendered = readFileSync(settingsTemplate, "utf8").replaceAll("{{FORGE_URL}}", url).replaceAll("{{FORGE_TOKEN}}", this.deps.token);
     const statusLineConfig = join(dir, "statusline.json");
     writeFileSync(statusLineConfig, JSON.stringify({ url: `${url}/hooks/usage`, token: this.deps.token }), { mode: 0o600 });
-    const settings = JSON.stringify(withForgeSignals(JSON.parse(rendered) as Record<string, unknown>, url, this.deps.token, statusLineConfig), null, 2);
+    const settings = JSON.stringify(withForgeSignals(JSON.parse(rendered) as Record<string, unknown>, url, this.deps.token, statusLineConfig, { auto }), null, 2);
     const mcp = {
       mcpServers: {
         factory: { type: "http", url: `${url}/mcp/${row.id}`, headers: { "x-forge-token": this.deps.token } },
