@@ -29,13 +29,14 @@ Objective: talk to an orchestrator that reads the backlog and proposes a DAG pla
 | T2 | S2 | inline | done | dbe09a0 |
 | T3 | S2, S6 | inline | done | 9b76900, 348c978 |
 | T4 | S3, S4 | inline | done | 658d2e0 |
-| T5 | S5 | inline | pending | |
-| T6 | S7 | inline | pending | |
-| T7 | S8 | inline | pending | |
-| T8 | S8, S9 | inline | pending | |
+| T5 | S5 | inline | done | b51918b |
+| T6 | S7 | inline | done | 924fd4c |
+| T7 | S8 | inline | done | 348c978, 658d2e0, b51918b, 924fd4c |
+| T8 | S8, S9 | inline | in progress | sandbox 2023ff0 |
 
 ## Log
 
 - L1 (2026-11-17) User: "Mezclado avanza con el plan" → plan proposed; L2 User: "si apruebo el plan" (includes the ~15-session real run with 3 new sandbox tasks).
 - L3 Verified in docs: `StopFailure` matcher values include `rate_limit` (input fields undocumented); statusline JSON has `rate_limits.five_hour.used_percentage`/`resets_at` for Pro/Max/Ultra after the first API response.
 - L4 T1-T4 done inline (no writer trigger: one sequential behaviour chain). Plans and plan tasks move through transition tables (repo rule). Found and fixed a real bug: a fresh dependency branch with no commits counted as merged (9b76900). Probe: StopFailure input has `error` + `last_assistant_message`; HTTP StopFailure hooks fire. Global cap `FORGE_MAX_CONCURRENCY` plus `policies.max_concurrency`; usage threshold global `FORGE_USAGE_PAUSE_PERCENT` (spec said policies; recorded in ADR 0008). A pause holds every pipeline's next step. 321 tests green twice.
+- L5 T5-T7 done: orchestrator session + factory tools (dependency counted by its latest Forge run), panel (plan card, Queued, pause, orchestrator pane, usage widget), 322 unit/integration tests and 10 Playwright tests green. T8: sandbox got TASK-004 (API delete, src/), TASK-005 (Escape clears field, public/), TASK-006 (Delete button, public/, depends on TASK-004) and the orchestrator files; backend serving with FORGE_MAX_CONCURRENCY=2, waiting for the user to ask the orchestrator for a plan and approve it.
