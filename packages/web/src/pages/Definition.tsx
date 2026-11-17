@@ -85,15 +85,17 @@ const DOCS = ["intake.md", "requirements.md", "architecture.md", "threat-model.m
 function Documents({ view, onChanged }: { view: DefinitionView; onChanged: (v: DefinitionView) => void }) {
   const docs = DOCS.filter((d) => view.files.includes(`.factory/${d}`));
   const backlog = view.files.filter((f) => /^\.factory\/backlog\/TASK-\d+\.md$/.test(f)).map((f) => f.replace(".factory/", ""));
-  const tabs = [...docs, ...(backlog.length ? ["backlog"] : []), ...(view.prototypeScreens.length ? ["Prototype"] : [])];
+  // In the order the stages write them: the prototype (UI design) comes before the backlog.
+  const tabs = [...docs, ...(view.prototypeScreens.length ? ["Prototype"] : []), ...(backlog.length ? ["backlog"] : [])];
   const [tab, setTab] = useState<string | null>(null);
   const active = tab && tabs.includes(tab) ? tab : (tabs.at(-1) ?? null);
   const [text, setText] = useState("");
   const [screen, setScreen] = useState<string | null>(null);
   const design = view.stages.find((s) => s.stage === "design");
 
-  // Refetch when the tab or the stage's files change (a new session rewrote them).
-  const filesKey = `${view.files.join(",")}|${view.stages.map((s) => `${s.stepId ?? ""}:${s.status}`).join(",")}`;
+  // Refetch when a shown file changes: its version is its modification time, so edits by a live session show up too.
+  const version = (path: string) => view.fileVersions[`.factory/${path}`] ?? 0;
+  const filesKey = (active === "backlog" ? backlog : active ? [active] : []).map((p) => `${p}@${version(p)}`).join(",");
   const backlogKey = backlog.join(",");
   useEffect(() => {
     if (!active || active === "Prototype") return;
@@ -103,6 +105,7 @@ function Documents({ view, onChanged }: { view: DefinitionView; onChanged: (v: D
 
   if (!active) return <p className="muted panel">The stage's files show here once it writes them.</p>;
   const shownScreen = screen && view.prototypeScreens.includes(screen) ? screen : view.prototypeScreens[0];
+  const screenUrl = (name: string) => `${definitionFileUrl(view.projectId, `prototype/${name}`)}?v=${version(`prototype/${name}`)}`;
   return (
     <>
       <div className="tabs" role="tablist" style={{ padding: "0 18px" }}>
@@ -128,9 +131,11 @@ function Documents({ view, onChanged }: { view: DefinitionView; onChanged: (v: D
                 </div>
               );
             })}
+            {/* The served file keeps its sandbox CSP in a tab of its own too. */}
+            <a className="small" href={screenUrl(shownScreen)} target="_blank" rel="noopener noreferrer" style={{ marginLeft: "auto" }}>Open full size</a>
           </div>
-          {/* Generated HTML: sandboxed without allow-same-origin, and its CSP blocks the network. */}
-          <iframe title={`Prototype ${shownScreen}`} sandbox="allow-scripts" src={definitionFileUrl(view.projectId, `prototype/${shownScreen}`)} className="prototype-frame" />
+          {/* Generated HTML: sandboxed without allow-same-origin, and its CSP blocks the network. The version reloads it when rewritten. */}
+          <iframe key={screenUrl(shownScreen)} title={`Prototype ${shownScreen}`} sandbox="allow-scripts" src={screenUrl(shownScreen)} className="prototype-frame" />
         </div>
       ) : (
         <div className="panel doc markdown" data-testid="definition-document">
@@ -207,7 +212,8 @@ export function DefinitionPage({ project, view, onChanged }: { project: Project;
         {view.prUrl ? <a className="btn primary" href={view.prUrl} target="_blank" rel="noreferrer">Definition PR</a> : null}
       </div>
       <StageProgress view={view} />
-      <div className="definition">
+      {/* With no live session, the documents and the prototype take most of the width. */}
+      <div className={`definition${shownStage.status === "running" ? "" : " idle"}`}>
         {shownStage.stepId && shownStage.status === "running" ? (
           <Session key={shownStage.stepId} stepId={shownStage.stepId} label={STAGE_LABELS[shownStage.stage]} live />
         ) : (
@@ -218,7 +224,16 @@ export function DefinitionPage({ project, view, onChanged }: { project: Project;
         <section className="card documents" aria-label="Documents">
           <Documents view={view} onChanged={onChanged} />
           <Gate view={view} onChanged={onChanged} />
-          {!stage ? <div className="gate"><strong>Definition approved.</strong><span className="small muted">{view.prUrl ? "Merge the definition PR; then plan the backlog in Execution." : "Opening the definition PR…"}</span></div> : null}
+          {!stage ? (
+            <div className="gate">
+              <strong>{view.mergedAt ? "Definition merged." : "Definition approved."}</strong>
+              {view.mergedAt ? (
+                <a className="btn primary" href="#/">Plan the backlog in Execution</a>
+              ) : (
+                <span className="small muted">{view.prUrl ? "Merge the definition PR; Forge notices and updates your clone." : "Opening the definition PR…"}</span>
+              )}
+            </div>
+          ) : null}
         </section>
       </div>
     </>

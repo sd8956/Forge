@@ -10,6 +10,8 @@ const view = (statuses: string[]): DefinitionView => ({
   idea: "x",
   prUrl: null,
   files: [],
+  fileVersions: {},
+  mergedAt: null,
   prototypeScreens: [],
   stages: (["intake", "requirements", "architecture", "test_strategy", "design", "backlog"] as const).map((stage, i) => ({
     stage,

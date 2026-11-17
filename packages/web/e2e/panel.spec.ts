@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
@@ -218,12 +219,33 @@ test("defines a new project stage by stage: changes, an isolated prototype appro
   expect(await inner.evaluate("(() => { try { return window.parent.document.title; } catch { return 'blocked'; } })()")).toBe("blocked");
   await page.screenshot({ path: join(shots, "definition.png"), fullPage: true });
 
+  // Asking for a change reloads the open prototype by itself once the new session rewrites it.
+  await expect(frame.getByText("Design attempt 1")).toBeVisible();
+  await gate.getByRole("button", { name: "Request changes" }).click();
+  await gate.getByLabel("What should change").fill("Make the form wider");
+  await gate.getByRole("button", { name: "Send the changes" }).click();
+  await expect(page.getByTestId("stage-design")).toContainText("In review", { timeout: 20_000 });
+  await expect(page.frameLocator('iframe[title="Prototype index.html"]').getByText("Design attempt 2")).toBeVisible({ timeout: 20_000 });
+
   await gate.getByRole("button", { name: "Approve and continue" }).click();
   await expect(gate.getByRole("alert")).toContainText("Approve every screen first: index.html, stats.html");
   await page.getByRole("button", { name: "Approve screen index.html" }).click();
   await page.getByRole("button", { name: "Approve screen stats.html" }).click();
   await approve("design");
+  await expect(page.getByTestId("stage-backlog")).toContainText("In review", { timeout: 20_000 });
+  // Tabs follow the order the stages wrote them.
+  const tabs = await page.getByRole("tab").allTextContents();
+  expect(tabs.slice(-2)).toEqual(["Prototype", "backlog"]);
   await approve("backlog");
   await expect(page.getByRole("link", { name: "Definition PR" })).toBeVisible({ timeout: 20_000 });
   await expect(page.getByText("Definition approved.")).toBeVisible();
+
+  // The person merges the PR on GitHub; Forge notices, pulls main into the clone and says so.
+  const prNumber = (await page.getByRole("link", { name: "Definition PR" }).getAttribute("href"))!.split("/").at(-1)!;
+  execFileSync("git", ["-C", `${state.newApp}-origin.git`, "update-ref", "refs/heads/main", "refs/heads/forge/definition"]);
+  const gh = JSON.parse(readFileSync(state.ghState, "utf8")) as { prs: Record<string, { state: string }> };
+  gh.prs[prNumber]!.state = "MERGED";
+  writeFileSync(state.ghState, JSON.stringify(gh));
+  await expect(page.getByText("Definition merged.")).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByRole("link", { name: "Plan the backlog in Execution" })).toBeVisible();
 });

@@ -121,7 +121,7 @@ const DEFINITION_FILES = {
   def_design: {
     ".factory/design/tokens.json": '{"color": {"brand": "#c2410c"}}\n',
     ".factory/design/components.md": "# Components\n\n- Link form\n",
-    ".factory/prototype/index.html": "<!doctype html><title>Shorten</title><h1>Shorten a link</h1><script>document.title = 'prototype ran'</script>\n",
+    ".factory/prototype/index.html": "<!doctype html><title>Shorten</title><h1>Shorten a link</h1><p>Design attempt ATTEMPT</p><script>document.title = 'prototype ran'</script>\n",
     ".factory/prototype/stats.html": "<!doctype html><title>Stats</title><h1>Link stats</h1>\n",
   },
   def_backlog: {
@@ -134,7 +134,10 @@ function produceDefinition(status, { valid = true } = {}) {
   const entries = Object.entries(written).slice(0, valid ? undefined : -1);
   // When the person asked for changes, the fake records the request in the first file it writes.
   const feedback = /## Changes the person asked for\n\n[^\n]*\n\n> ([^\n]+)/.exec(input)?.[1];
-  const files = entries.map(([rel, content], i) => writeFile(rel, i === 0 && feedback && rel.endsWith(".md") ? `${content}\nChanged after review: ${feedback}\n` : content));
+  const files = entries.map(([rel, raw], i) => {
+    const content = raw.replace("ATTEMPT", String(attempt));
+    return writeFile(rel, i === 0 && feedback && rel.endsWith(".md") ? `${content}\nChanged after review: ${feedback}\n` : content);
+  });
   const outputMd = join(outputDir, "output.md");
   const summary = `Fake ${kind} attempt ${attempt}: ${status}`;
   writeFile(outputMd, `---\n${stringify({ ...template, step: kind, task: taskId, attempt, status, summary, artifacts: files })}---\n\n${summary}\n`);

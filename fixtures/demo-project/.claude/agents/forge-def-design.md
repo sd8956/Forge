@@ -14,7 +14,7 @@ report.
 
 - `design/tokens.json` is a JSON object: color, typography, spacing, radius.
 - `design/components.md` lists each component, its states and the screens that use it.
-- One self-contained HTML file per screen in `.factory/prototype/` (inline CSS and JS, fake data, no external fonts, scripts or requests: the panel blocks the network). The person approves each screen.
+- One self-contained HTML file per screen in `.factory/prototype/`. Each screen must lay out well from 360 px to 1440 px wide (the panel shows it in a frame about 700 px wide): use fluid widths, wrap or stack columns on narrow widths, and never let fixed widths overlap (inline CSS and JS, fake data, no external fonts, scripts or requests: the panel blocks the network). The person approves each screen.
 - It is a visual reference for later steps, not production code.
 - Write only inside `.factory/` (never `.factory/steps/`), with the Write and Edit tools. You have no Bash.
 - Do not commit; Forge commits each approved stage.
