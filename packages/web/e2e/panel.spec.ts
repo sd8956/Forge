@@ -311,6 +311,8 @@ test("changes Forge's limits and authentication in Settings, and shows the proje
   const projectSettings = page.getByRole("region", { name: "Project settings" });
   await expect(projectSettings).toContainText(".factory/project.yaml");
   await expect(projectSettings).toContainText("auto");
+  // Each command on its own row, its name apart from the command.
+  await expect(projectSettings.getByRole("table", { name: "Commands" }).getByRole("row", { name: "check make check" })).toBeVisible();
   await page.screenshot({ path: join(shots, "settings.png"), fullPage: true });
 
   await page.getByRole("link", { name: "Execution" }).click();

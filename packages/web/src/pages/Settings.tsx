@@ -104,12 +104,31 @@ function ProjectSection({ project }: { project: Project }) {
       {error ? <p role="alert">{error}</p> : null}
       {settings ? (
         <>
-          <p className="muted small">These come from <span className="mono">{settings.file}</span>, the project's source of truth. Edit them there and commit.</p>
-          <div className="kv"><span>Permission mode</span><span className="mono">{settings.permissionMode}</span></div>
-          <div className="kv"><span>Max sessions for this project</span><span className="mono">{settings.maxConcurrency ?? "Forge's limit"}</span></div>
-          <div className="kv"><span>Extra review authors</span><span className="mono">{settings.allowedAuthors.length ? settings.allowedAuthors.join(", ") : "none (write collaborators only)"}</span></div>
-          <div className="kv"><span>PR poll interval</span><span className="mono">{settings.pollIntervalSeconds ? `${settings.pollIntervalSeconds} s` : "Forge's default"}</span></div>
-          <div className="kv"><span>Commands</span><span className="mono small">{Object.entries(settings.commands).map(([k, v]) => `${k}: ${v}`).join(" · ")}</span></div>
+          <p className="muted small">These come from <span className="mono path">{settings.file}</span>, the project's source of truth. Edit them there and commit.</p>
+          {/* Literal values in mono; defaults that come from Forge in plain muted text. */}
+          <dl className="settings-list">
+            <dt>Permission mode</dt>
+            <dd className="mono">{settings.permissionMode}</dd>
+            <dt>Max sessions for this project</dt>
+            <dd>{settings.maxConcurrency !== null ? <span className="mono">{settings.maxConcurrency}</span> : <span className="muted">Forge's limit</span>}</dd>
+            <dt>Extra review authors</dt>
+            <dd>{settings.allowedAuthors.length ? <span className="mono">{settings.allowedAuthors.join(", ")}</span> : <span className="muted">None: write collaborators only</span>}</dd>
+            <dt>PR poll interval</dt>
+            <dd>{settings.pollIntervalSeconds ? <span className="mono">{settings.pollIntervalSeconds} s</span> : <span className="muted">Forge's default</span>}</dd>
+            <dt>Commands</dt>
+            <dd>
+              <table className="commands" aria-label="Commands">
+                <tbody>
+                  {Object.entries(settings.commands).map(([name, command]) => (
+                    <tr key={name}>
+                      <td className="muted">{name}</td>
+                      <td className="mono">{command}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </dd>
+          </dl>
         </>
       ) : null}
     </section>
