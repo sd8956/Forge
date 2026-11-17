@@ -18,14 +18,17 @@ Objective: close the pre-Phase-2 items from `docs/runs/f1.md` so pipeline runs n
 
 | ID | Specs | Route | Status | Commit |
 | --- | --- | --- | --- | --- |
-| T1 | S2 | inline | pending | |
-| T2 | S3 | inline | pending | |
-| T3 | S4 | inline | pending | |
-| T4 | S5 | inline | pending | |
-| T5 | S6, S7, S8 | inline | pending | |
-| T6 | S9 | inline | pending | |
+| T1 | S2 | inline | done | 42f3ed2, 8727a3f |
+| T2 | S3 | inline | done | 8727a3f |
+| T3 | S4 | inline | done | 8727a3f |
+| T4 | S5 | inline | done | c2d779d |
+| T5 | S6, S7, S8 | inline | done | 7342acf, 8727a3f (attribution) |
+| T6 | S9 | inline | done | 7d74e83, sandbox f25f6b5 |
 
 ## Log
 
 - L1 (2026-11-17) User: "cubre todos los puntos que mencionas antes de avanzar a la fase 2".
 - L2 Verified: PreToolUse deny JSON `hookSpecificOutput.permissionDecision: "deny"` + `permissionDecisionReason`; matcher `Bash`; PostToolUse without matcher fires for every tool; `attribution.commit`/`attribution.pr` replace deprecated `includeCoAuthoredBy`; `permissions.denyInsteadOfPrompting` exists (user/managed/--settings) — considered as an alternative. Found: agents add `Co-Authored-By: Claude` to sandbox commits.
+- L3 (2026-11-17) Guard classifier checked against the 79 real F1 commands: 14 denied (6 heredoc, 4 variable, 1 inline script, 1 cd, 1 expansion, 1 outside worktree), 65 allowed. Semgrep rule: flags the seeded echo route and header reflection, no findings on the fixed server or JSON/static responses.
+- L4 Real probe (Claude Code 2.1.322, haiku, -p): HTTP PreToolUse deny is honoured and the model switches to Write; PostToolUse fires for Write and Bash; `attribution: {commit: "", pr: ""}` leaves no Co-Authored-By trailer.
+- L5 199 tests, lint and typecheck green. Next: user decides push/PR; optional real pipeline run to measure prompts.
