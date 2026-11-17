@@ -128,10 +128,14 @@ test("approves a proposed plan in the panel, shows why it waits, and pauses and 
   await page.getByRole("button", { name: "Pause queue" }).click();
   await expect(page.getByRole("status").filter({ hasText: "Queue paused." })).toBeVisible();
 
-  const proposed = await orchestratorTool(projectId, "propose_plan", { rationale: "Health endpoint on its own", waves: [{ tasks: [{ id: "TASK-003", modules: ["src/server"] }] }] });
+  // A long module list, like real plans have, must not squeeze the title.
+  const modules = ["package.json", "pnpm-lock.yaml", "tsconfig.json", "tsconfig.server.json", "eslint.config.js", "playwright.config.ts", "vitest.config.ts", "Makefile", "src/server/platform/app.ts", "src/server/main.ts", "src/web", "test/e2e", "test/unit/support"];
+  const proposed = await orchestratorTool(projectId, "propose_plan", { rationale: "Health endpoint on its own", waves: [{ tasks: [{ id: "TASK-003", modules: ["src/server", ...modules] }] }] });
   expect(proposed.isError).toBeFalsy();
   const plan = page.getByRole("region", { name: "Proposed plan" });
   await expect(plan.getByTestId("plan-task-TASK-003")).toContainText("src/server");
+  const title = await plan.getByTestId("plan-task-TASK-003").getByText("Health endpoint").boundingBox();
+  expect(title?.width ?? 0).toBeGreaterThan(150);
   await expect(plan.getByText("Wave 1")).toBeVisible();
   await page.screenshot({ path: join(shots, "plan.png"), fullPage: true });
   await plan.getByRole("button", { name: "Approve plan" }).click();

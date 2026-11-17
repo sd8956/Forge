@@ -20,10 +20,12 @@ export function PlanCard({ plan, onApprove, onReject }: { plan: PlanView; onAppr
         <div key={wave} className="plan-wave">
           <div className="muted small">Wave {wave + 1}</div>
           {plan.tasks.filter((t) => t.wave === wave).map((t) => (
-            <div className="list-row" key={t.id} data-testid={`plan-task-${t.taskId}`}>
+            <div className="plan-row" key={t.id} data-testid={`plan-task-${t.taskId}`}>
               <span className="mono small muted">{t.taskId}</span>
-              <span>{t.title}</span>
-              <span className="small muted mono">{t.modules.join(", ")}</span>
+              <span className="plan-title">{t.title}</span>
+              <span className="chips" aria-label={`Modules of ${t.taskId}`}>
+                {t.modules.map((m) => <span key={m} className="chip mono">{m}</span>)}
+              </span>
               <span className="small muted">{t.dependsOn.length ? `after ${t.dependsOn.join(", ")}` : ""}</span>
             </div>
           ))}
