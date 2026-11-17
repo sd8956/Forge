@@ -25,10 +25,10 @@ Objective: talk to an orchestrator that reads the backlog and proposes a DAG pla
 
 | ID | Specs | Route | Status | Commit |
 | --- | --- | --- | --- | --- |
-| T1 | S1 | inline | pending | |
-| T2 | S2 | inline | pending | |
-| T3 | S2, S6 | inline | pending | |
-| T4 | S3, S4 | inline | pending | |
+| T1 | S1 | inline | done | 81fde62, 551a556 |
+| T2 | S2 | inline | done | dbe09a0 |
+| T3 | S2, S6 | inline | done | 9b76900, 348c978 |
+| T4 | S3, S4 | inline | done | 658d2e0 |
 | T5 | S5 | inline | pending | |
 | T6 | S7 | inline | pending | |
 | T7 | S8 | inline | pending | |
@@ -38,3 +38,4 @@ Objective: talk to an orchestrator that reads the backlog and proposes a DAG pla
 
 - L1 (2026-11-17) User: "Mezclado avanza con el plan" → plan proposed; L2 User: "si apruebo el plan" (includes the ~15-session real run with 3 new sandbox tasks).
 - L3 Verified in docs: `StopFailure` matcher values include `rate_limit` (input fields undocumented); statusline JSON has `rate_limits.five_hour.used_percentage`/`resets_at` for Pro/Max/Ultra after the first API response.
+- L4 T1-T4 done inline (no writer trigger: one sequential behaviour chain). Plans and plan tasks move through transition tables (repo rule). Found and fixed a real bug: a fresh dependency branch with no commits counted as merged (9b76900). Probe: StopFailure input has `error` + `last_assistant_message`; HTTP StopFailure hooks fire. Global cap `FORGE_MAX_CONCURRENCY` plus `policies.max_concurrency`; usage threshold global `FORGE_USAGE_PAUSE_PERCENT` (spec said policies; recorded in ADR 0008). A pause holds every pipeline's next step. 321 tests green twice.
