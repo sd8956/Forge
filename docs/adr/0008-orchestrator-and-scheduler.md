@@ -25,7 +25,8 @@
   rounds: it stores the threads and wakes the scheduler, which gives review rounds the free slots first.
 - **Slots and modules.** Runs that are `queued`, `running` or `needs_human` hold a slot (the definition's "sessions"),
   whether a plan or `forge run-task` started them; `forge run-task` itself is not capped. Their plan task's modules
-  are busy; a run waiting for review holds neither. Modules overlap when one is the other or a folder above it.
+  are busy. A run waiting for review frees its slot but keeps its modules until the merge (amended after the
+  daily-tasks run: two open PRs changing the same file conflicted at merge time). Modules overlap when one is the other or a folder above it.
   `FORGE_MAX_CONCURRENCY` (default 3) caps all projects; `policies.max_concurrency` can lower it for one project.
 - **Merged dependencies.** A dependency counts as merged only when git says so *and* no Forge run for it is
   unfinished (open or waiting for review) and it is not still queued. A fresh task branch with no commits is an

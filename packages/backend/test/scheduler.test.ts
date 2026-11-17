@@ -86,7 +86,7 @@ describe("scheduler with fake claude", () => {
     expect(waiting()).toMatchObject({ state: "launched", runId: dependent.id, waitReason: null });
   });
 
-  it("never runs two tasks that share a module, and the cap counts every open run", async () => {
+  it("never runs two tasks that share a module, not even while the first waits for review", async () => {
     const ctx = await setup({ maxConcurrency: 3 });
     const plans = ctx.backend().plans;
     const plan = plans.propose(ctx.project, "same module", [task("TASK-010", 0, ["src/server"]), task("TASK-012", 0, ["src/server/routes"]), task("TASK-013", 0, ["public"])], "test");
@@ -100,8 +100,20 @@ describe("scheduler with fake claude", () => {
     expect((await runsByTask(ctx.api()))["TASK-012"]).toBeUndefined();
     expect(plans.tasks(plan.id).find((t) => t.taskId === "TASK-012")?.waitReason).toBe("Module busy: src/server (TASK-010)");
 
+    // TASK-010 opens its PR: it frees its slot but keeps its module until the merge.
     ctx.release();
-    await waitFor(async () => (await runsByTask(ctx.api()))["TASK-012"], "TASK-012 to start once TASK-010 leaves the module");
+    const reviewing = await waitFor(async () => {
+      const runs = await runsByTask(ctx.api());
+      return runs["TASK-010"]?.status === "waiting_review" ? runs : undefined;
+    }, "TASK-010 to wait for review");
+    await ctx.backend().scheduler.tick();
+    expect((await runsByTask(ctx.api()))["TASK-012"]).toBeUndefined();
+    expect(plans.tasks(plan.id).find((t) => t.taskId === "TASK-012")?.waitReason).toBe("Module busy: src/server (TASK-010, waiting for review)");
+
+    ctx.git("merge", "-q", "--no-ff", "feat/TASK-010", "-m", "Merge TASK-010");
+    await ctx.backend().runService.onPrMerged(reviewing["TASK-010"]!.id);
+    await ctx.backend().scheduler.tick();
+    await waitFor(async () => (await runsByTask(ctx.api()))["TASK-012"], "TASK-012 to start once TASK-010 merges");
   });
 
   it("launches nothing while paused, and continues after a restart without launching twice", async () => {

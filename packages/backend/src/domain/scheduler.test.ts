@@ -55,6 +55,17 @@ describe("schedule", () => {
     expect(result.waits).toEqual({ "pt-TASK-001": "Module busy: src/server (TASK-009)", "pt-TASK-003": "Module busy: public (TASK-002)" });
   });
 
+  it("keeps a module busy while its task waits for review, without taking a slot", () => {
+    const result = schedule({
+      ...base,
+      maxConcurrency: 1,
+      active: [{ ...active("TASK-009", ["src/server"]), slot: false }],
+      items: [item("TASK-001", { modules: ["src/server/app.ts"] }), item("TASK-002", { modules: ["public"] })],
+    });
+    expect(result.launches).toEqual(["pt-TASK-002"]);
+    expect(result.waits).toEqual({ "pt-TASK-001": "Module busy: src/server (TASK-009, waiting for review)" });
+  });
+
   it("only compares modules within the same project", () => {
     const result = schedule({ ...base, active: [active("TASK-009", ["src"], "/other")], items: [item("TASK-001", { modules: ["src"] })] });
     expect(result.launches).toEqual(["pt-TASK-001"]);
