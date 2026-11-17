@@ -1,6 +1,6 @@
 import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import { notificationHookInput, sessionEndHookInput, startRunRequest, stopHookInput } from "@forge/shared";
+import { activityHookInput, notificationHookInput, preToolUseHookInput, sessionEndHookInput, startRunRequest, stopHookInput } from "@forge/shared";
 import { z } from "zod";
 import { TOKEN_HEADER, tokenMatches } from "../auth.js";
 import { DuplicateRunError, toRunView, type RunStore } from "../db/run-store.js";
@@ -50,6 +50,20 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
     if (!parsed.success) return badRequest(reply, parsed.error);
     const decision = await deps.service.onStop(parsed.data);
     return decision ? reply.send(decision) : reply.code(204).send();
+  });
+
+  app.post("/hooks/pre-tool-use", async (request, reply) => {
+    const parsed = preToolUseHookInput.safeParse(request.body);
+    if (!parsed.success) return badRequest(reply, parsed.error);
+    const decision = deps.service.onPreToolUse(parsed.data);
+    return decision ? reply.send(decision) : reply.code(204).send();
+  });
+
+  app.post("/hooks/activity", async (request, reply) => {
+    const parsed = activityHookInput.safeParse(request.body);
+    if (!parsed.success) return badRequest(reply, parsed.error);
+    deps.service.onActivity(parsed.data);
+    return reply.code(204).send();
   });
 
   app.post("/hooks/notification", async (request, reply) => {

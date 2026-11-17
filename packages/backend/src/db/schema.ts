@@ -26,6 +26,10 @@ export const steps = sqliteTable(
     timeoutMs: integer("timeout_ms").notNull(),
     deadlineAt: integer("deadline_at"),
     stopBlockCount: integer("stop_block_count").notNull().default(0),
+    /** Permission prompts the session showed (Notification permission_prompt). */
+    permissionPrompts: integer("permission_prompts").notNull().default(0),
+    /** Tool calls the PreToolUse guard denied with a corrective reason. */
+    toolDenials: integer("tool_denials").notNull().default(0),
     reportedAt: integer("reported_at"),
     summary: text("summary"),
     artifacts: text("artifacts", { mode: "json" }).$type<string[]>(),

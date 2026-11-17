@@ -15,11 +15,13 @@ values typed in: no shell variables, no `$(...)`, no `cd`, no pipes. Commands bu
 permission prompt; anything else stops the pipeline until a person answers.
 
 ```bash
-semgrep scan --config p/default --metrics off --baseline-commit <base-commit> --json --output <out>/semgrep.json --quiet .
+semgrep scan --config p/default --config .semgrep/forge.yml --metrics off --baseline-commit <base-commit> --json --output <out>/semgrep.json --quiet .
 gitleaks git --log-opts=<base-commit>..HEAD --report-format json --report-path <out>/gitleaks.json --redact .
 osv-scanner scan source --lockfile package-lock.json --format json --output-file <out>/osv.json
 ```
 
+- `.semgrep/forge.yml` holds the project rules (for example reflected HTML in raw Node responses, which
+  `p/default` misses). Registry packs alone are not enough: always review the diff yourself.
 - gitleaks exits 1 when it finds leaks; that is a result, not an error.
 - osv-scanner exits 1 when it finds vulnerabilities. Pass the lockfile explicitly: a task worktree lives
   under an ignored folder, so a recursive scan (`-r .`) finds nothing. If the project has no lockfile,

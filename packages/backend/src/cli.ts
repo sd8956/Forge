@@ -108,11 +108,15 @@ function printStatus(run: RunDetail): void {
   console.log(`Run ${run.id} — ${run.taskId} — ${run.status}${run.exitReason ? ` (${run.exitReason})` : ""}`);
   console.log(`Branch ${run.branch} → ${run.baseBranch}; current step ${run.currentStep}; failures ${JSON.stringify(run.attempts)}`);
   if (run.prUrl) console.log(`Pull request ${run.prUrl}`);
-  console.log("\nSteps:");
+  console.log("\nSteps:                                           model   time  prompts denied");
   for (const step of run.steps) {
     const duration = step.startedAt && step.endedAt ? `${Math.round((step.endedAt - step.startedAt) / 1000)}s` : "-";
-    console.log(`  ${describeStep(step).padEnd(48)} ${(step.model ?? "").padEnd(8)} ${duration.padStart(6)}  ${step.summary?.split("\n")[0]?.slice(0, 80) ?? ""}`);
+    const metrics = `${String(step.permissionPrompts).padStart(7)} ${String(step.toolDenials).padStart(6)}`;
+    console.log(`  ${describeStep(step).padEnd(48)} ${(step.model ?? "").padEnd(6)} ${duration.padStart(6)} ${metrics}  ${step.summary?.split("\n")[0]?.slice(0, 70) ?? ""}`);
   }
+  const prompts = run.steps.reduce((n, s) => n + s.permissionPrompts, 0);
+  const denials = run.steps.reduce((n, s) => n + s.toolDenials, 0);
+  console.log(`  Total: ${run.steps.length} sessions, ${prompts} permission prompts, ${denials} tool calls denied by the guard`);
   console.log(`\nMemories tagged ${run.taskId}/<step>:`);
   if (!run.memories.available) console.log(`  (Engram unavailable: ${run.memories.error ?? "unknown"})`);
   else if (run.memories.items.length === 0) console.log("  (none)");

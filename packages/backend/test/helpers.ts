@@ -70,6 +70,7 @@ export function fakeEnv(root: string, script: Record<string, string[] | string> 
     FAKE_CLAUDE_SCRIPT: JSON.stringify(script),
     FAKE_CLAUDE_TRACE: join(root, "trace.jsonl"),
     FAKE_CLAUDE_RELEASE: join(root, "release"),
+    FAKE_CLAUDE_RELEASE_2: join(root, "release-2"),
     FAKE_CLAUDE_TRANSCRIPT_DIR: root,
   };
 }

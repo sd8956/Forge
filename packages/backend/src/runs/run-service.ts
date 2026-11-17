@@ -17,6 +17,7 @@ import { loadPipeline, modelFor, parseTaskSize, stepById, type Pipeline } from "
 import { runShell } from "../runner/shell.js";
 import { branchFor, ensureWorktree } from "../runner/worktree.js";
 import type { StepPolicy, StepService } from "../steps/step-service.js";
+import { parseDependencies, unmergedDependencies } from "./dependencies.js";
 import { isTrusted } from "./trust.js";
 
 const git = promisify(execFile);
@@ -59,6 +60,14 @@ export class RunService implements StepPolicy {
     const projectPath = resolve(req.projectPath);
     const pipeline = this.validateProject(projectPath, req.taskId);
     const baseBranch = (await git("git", ["-C", projectPath, "rev-parse", "--abbrev-ref", "HEAD"], { encoding: "utf8" })).stdout.trim();
+    const deps = parseDependencies(readFileSync(join(projectPath, ".factory", "backlog", `${req.taskId}.md`), "utf8"));
+    const unmerged = await unmergedDependencies(projectPath, baseBranch, deps);
+    if (unmerged.length) {
+      const list = unmerged.join(", ");
+      throw new RunRequestError(
+        `${req.taskId} depends on ${list}, which ${unmerged.length > 1 ? "are" : "is"} not merged into ${baseBranch} yet. Merge ${unmerged.length > 1 ? "their pull requests" : "its pull request"}, update ${baseBranch} in the project and run again.`,
+      );
+    }
     const worktreePath = await ensureWorktree(projectPath, req.taskId);
     const run = this.deps.runs.insert({
       id: randomUUID(),
@@ -103,6 +112,14 @@ export class RunService implements StepPolicy {
   onStepChanged(step: StepRow): void {
     if (!step.runId || !this.ready) return;
     const runId = step.runId;
+    if (step.status === "running") {
+      // The step that needed a person is working again (a tool ran or the person typed).
+      const run = this.deps.runs.get(runId);
+      if (run?.status === "needs_human" && this.deps.runs.latestStep(runId)?.id === step.id) {
+        this.deps.runs.transition(runId, "resume", {}, { cause: "step_resumed", step: step.kind });
+      }
+      return;
+    }
     if (step.status === "needs_human") {
       const run = this.deps.runs.get(runId);
       if (run?.status === "running") this.deps.runs.transition(runId, "attention", {}, { cause: "step_needs_human", step: step.kind });

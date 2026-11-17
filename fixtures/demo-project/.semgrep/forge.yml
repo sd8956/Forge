@@ -1,0 +1,28 @@
+# Project rules for the Forge security step. They complement the registry packs,
+# which do not follow request data into a raw Node http response.
+rules:
+  - id: node-http-reflected-html
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: >-
+      Request data reaches a Node http response body without HTML escaping (reflected XSS,
+      OWASP A03). Answer JSON, or escape & < > " ' before writing HTML.
+    metadata:
+      cwe: "CWE-79"
+      owasp: "A03:2021 Injection"
+      confidence: MEDIUM
+    mode: taint
+    pattern-sources:
+      - pattern: $URL.searchParams.get(...)
+      - pattern: $URL.searchParams.getAll(...)
+      - pattern: $REQ.headers[$KEY]
+      - pattern: $REQ.headers.$KEY
+    pattern-sanitizers:
+      - pattern: JSON.stringify(...)
+      - pattern: escapeHtml(...)
+      - pattern: encodeURIComponent(...)
+      # File contents served from an allowlist are not request data.
+      - pattern: readFile(...)
+    pattern-sinks:
+      - pattern: $RES.end($BODY, ...)
+      - pattern: $RES.write($BODY, ...)

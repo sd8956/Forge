@@ -64,6 +64,20 @@ export const sessionEndHookInput = hookBase.extend({
 });
 export type SessionEndHookInput = z.infer<typeof sessionEndHookInput>;
 
+export const preToolUseHookInput = hookBase.extend({
+  hook_event_name: z.literal("PreToolUse"),
+  tool_name: z.string(),
+  tool_input: z.record(z.string(), z.unknown()).default({}),
+});
+export type PreToolUseHookInput = z.infer<typeof preToolUseHookInput>;
+
+/** PostToolUse and UserPromptSubmit: the session is doing something. */
+export const activityHookInput = hookBase.extend({
+  hook_event_name: z.enum(["PostToolUse", "UserPromptSubmit"]),
+  tool_name: z.string().optional(),
+});
+export type ActivityHookInput = z.infer<typeof activityHookInput>;
+
 /** Notification types that mean a person must look at the session. */
 export const ATTENTION_NOTIFICATION_TYPES = ["permission_prompt", "idle_prompt"] as const;
 
@@ -99,6 +113,8 @@ export interface StepView {
   kind: string;
   attempt: number;
   model: string | null;
+  permissionPrompts: number;
+  toolDenials: number;
   agent: string;
   status: StepStatus;
   tmuxSession: string;

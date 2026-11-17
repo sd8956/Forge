@@ -151,5 +151,6 @@ describe("backend restart", () => {
     expect(statusOut).toContain("waiting_review");
     expect(statusOut).toContain("security#1 done");
     expect(statusOut).toContain("Engram unavailable");
+    expect(statusOut).toContain("Total: 6 sessions, 0 permission prompts, 0 tool calls denied by the guard");
   });
 });

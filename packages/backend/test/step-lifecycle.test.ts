@@ -110,15 +110,35 @@ describe("step lifecycle with a fake claude in tmux", () => {
     expect(await ctx.tmux.hasSession(step.tmuxSession)).toBe(true);
   });
 
-  it("moves to needs_human on a permission prompt and continues after the person answers", async () => {
+  it("moves to needs_human on a permission prompt and back to running once the person answers", async () => {
     const ctx = await setup("permission");
     const run = await startPlan(ctx);
     const waiting = await waitForStep(ctx, run.id, "needs_human");
     expect(waiting.events.find((e) => e.type === "transition" && e.payload.to === "needs_human")?.payload.cause).toBe("permission_prompt");
+    expect(waiting.permissionPrompts).toBe(1);
     expect((await ctx.api.run(run.id)).status).toBe("needs_human");
 
+    // The person answers; the next PostToolUse puts the step and the run back to running, before any report.
     writeFileSync(join(ctx.root, "release"), "");
+    const resumed = await waitForStep(ctx, run.id, "running");
+    expect(resumed.events.find((e) => e.type === "transition" && e.payload.event === "resume_work")?.payload.cause).toBe("PostToolUse");
+    expect((await ctx.api.run(run.id)).status).toBe("running");
+
+    writeFileSync(join(ctx.root, "release-2"), "");
     await ctx.api.waitForRun(run.id, "waiting_review");
+  });
+
+  it("denies a Bash file write with a corrective reason and counts it, without a prompt", async () => {
+    const ctx = await setup("guarded-write");
+    const run = await startPlan(ctx);
+    const done = await ctx.api.waitForRun(run.id, "waiting_review");
+    const guard = readTrace(ctx.root).find((t) => t.type === "guard") as { denied: { hookSpecificOutput: Record<string, string> }; allowed: unknown };
+    expect(guard.denied.hookSpecificOutput).toMatchObject({ hookEventName: "PreToolUse", permissionDecision: "deny" });
+    expect(guard.denied.hookSpecificOutput.permissionDecisionReason).toContain("Write and Edit tools");
+    expect(guard.allowed).toBeNull();
+    const step = await ctx.api.step(done.steps[0]?.id ?? "");
+    expect(step).toMatchObject({ toolDenials: 1, permissionPrompts: 0 });
+    expect(step.events.find((e) => e.type === "tool_denied")?.payload).toMatchObject({ tool: "Bash", rule: "heredoc" });
   });
 
   it("fails the step when the session ends without a report, and the run needs a person once retries are spent", async () => {

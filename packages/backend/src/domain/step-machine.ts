@@ -16,6 +16,7 @@ export const STEP_EVENTS = [
   "session_ended",
   "orphaned",
   "cancel",
+  "resume_work",
 ] as const;
 export type StepEvent = (typeof STEP_EVENTS)[number];
 
@@ -42,6 +43,8 @@ export const STEP_TRANSITIONS: readonly Transition[] = [
   { from: ["queued", ...ACTIVE], event: "orphaned", to: "failed" },
   // The run was cancelled by a person.
   { from: ["queued", ...ACTIVE], event: "cancel", to: "failed" },
+  // A tool ran or the person typed after the step needed attention: it is working again.
+  { from: ["needs_human"], event: "resume_work", to: "running" },
 ];
 
 export type TransitionResult =

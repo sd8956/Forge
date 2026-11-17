@@ -177,8 +177,7 @@ async function stop(stopHookActive = false) {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-async function waitForRelease() {
-  const file = process.env.FAKE_CLAUDE_RELEASE;
+async function waitForRelease(file = process.env.FAKE_CLAUDE_RELEASE) {
   while (!file || !existsSync(file)) await sleep(100);
 }
 
@@ -228,8 +227,19 @@ async function main() {
     case "permission":
       await hook("Notification", { notification_type: "permission_prompt", message: "Claude needs your permission to use Bash" });
       await waitForRelease();
+      // The person answered and the tool ran: Claude Code fires PostToolUse.
+      await hook("PostToolUse", { tool_name: "Bash", tool_input: { command: "gh auth status" } });
+      trace("resumed");
+      await waitForRelease(process.env.FAKE_CLAUDE_RELEASE_2);
       await finish("done");
       break;
+    case "guarded-write": {
+      const denied = await hook("PreToolUse", { tool_name: "Bash", tool_input: { command: "cat > notes.md <<'EOF'\nhi\nEOF" } });
+      const allowed = await hook("PreToolUse", { tool_name: "Bash", tool_input: { command: "make check" } });
+      trace("guard", { denied, allowed });
+      await finish("done");
+      break;
+    }
     case "wait-release":
       await waitForRelease();
       await finish("done");
