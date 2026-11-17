@@ -11,9 +11,12 @@ import { loginUrl } from "./http/panel-routes.js";
 import { buildServer } from "./http/server.js";
 import { ProjectStore } from "./db/project-store.js";
 import { EventBus } from "./events/event-bus.js";
+import { PrThreadStore } from "./db/pr-thread-store.js";
+import { GhCliClient, type GitHubClient } from "./github/github-client.js";
+import { PrWatcher } from "./github/pr-watcher.js";
 import { EngramAdapter, type MemoryAdapter } from "./memory/memory-adapter.js";
 import { Tmux } from "./runner/tmux.js";
-import { RunService } from "./runs/run-service.js";
+import { archiveDirFor, RunService } from "./runs/run-service.js";
 import { StepService } from "./steps/step-service.js";
 
 export interface Backend {
@@ -27,6 +30,8 @@ export interface Backend {
   projects: ProjectStore;
   /** A fresh one-time link that logs a browser into the panel. */
   loginLink: () => string;
+  watcher: PrWatcher;
+  threads: PrThreadStore;
   /** Stops the HTTP server and timers. tmux sessions are left running on purpose. */
   close: () => Promise<void>;
 }
@@ -41,7 +46,7 @@ export function memoryProjectFor(projectPath: string): string {
   return basename(projectPath);
 }
 
-export async function startBackend(config: ForgeConfig, opts: { logger?: boolean; memory?: MemoryAdapter } = {}): Promise<Backend> {
+export async function startBackend(config: ForgeConfig, opts: { logger?: boolean; memory?: MemoryAdapter; github?: GitHubClient } = {}): Promise<Backend> {
   const token = loadOrCreateToken(config.home);
   const { db, close: closeDb } = openDatabase(join(config.home, "forge.db"));
   const bus = new EventBus();
@@ -53,9 +58,19 @@ export async function startBackend(config: ForgeConfig, opts: { logger?: boolean
   };
   let url = baseUrl(config);
   const service = new StepService({ config, store, tmux, token, log, url: () => url });
-  const runService = new RunService({ config, runs, steps: service, log });
   const memory = opts.memory ?? new EngramAdapter(config.engramUrl);
+  const threads = new PrThreadStore(db);
+  const runService = new RunService({ config, runs, steps: service, threads, memory, memoryProject: memoryProjectFor, log });
   const projects = new ProjectStore(db);
+  const watcher = new PrWatcher({
+    runs,
+    threads,
+    projects,
+    github: opts.github ?? new GhCliClient(config.ghBin),
+    runService,
+    intervalMs: config.prPollIntervalMs,
+    log,
+  });
   const codes = new LoginCodes();
   let port = config.port;
 
@@ -75,6 +90,8 @@ export async function startBackend(config: ForgeConfig, opts: { logger?: boolean
     port: () => port,
     baseUrl: () => url,
     webDist: config.webDist,
+    archiveDir: (runId) => archiveDirFor(config.home, runId),
+    threads,
     bus,
     logger: opts.logger ?? false,
   });
@@ -84,6 +101,7 @@ export async function startBackend(config: ForgeConfig, opts: { logger?: boolean
   url = baseUrl({ host: config.host, port });
   await runService.reconcile();
   service.startSweeper();
+  watcher.start();
 
   return {
     url,
@@ -95,7 +113,10 @@ export async function startBackend(config: ForgeConfig, opts: { logger?: boolean
     reconciled,
     projects,
     loginLink: () => loginUrl({ baseUrl: () => url, codes }),
+    watcher,
+    threads,
     close: async () => {
+      await watcher.stop();
       await app.close();
       await service.shutdown();
       closeDb();

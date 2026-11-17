@@ -27,6 +27,10 @@ export interface ForgeConfig {
   engramUrl: string;
   /** Built panel served at `/`. */
   webDist: string;
+  /** GitHub CLI used by the PR watcher. Tests point it to a fake. */
+  ghBin: string;
+  /** Default interval between PR polls. */
+  prPollIntervalMs: number;
 }
 
 function intFromEnv(value: string | undefined, fallback: number): number {
@@ -53,6 +57,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, cwd = process.c
     checkTimeoutMs: intFromEnv(env.FORGE_CHECK_TIMEOUT_MS, 10 * 60_000),
     engramUrl: env.FORGE_ENGRAM_URL ?? "http://127.0.0.1:7437",
     webDist: resolve(env.FORGE_WEB_DIST ?? join(import.meta.dirname, "..", "..", "web", "dist")),
+    ghBin: env.FORGE_GH_BIN ?? "gh",
+    prPollIntervalMs: intFromEnv(env.FORGE_PR_POLL_MS, 120_000),
   };
 }
 

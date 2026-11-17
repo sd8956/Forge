@@ -59,3 +59,19 @@ describe("EngramAdapter", () => {
     expect(auth).toBe("Bearer secret");
   });
 });
+
+describe("EngramAdapter.save", () => {
+  it("creates the backend session and saves the observation in the project", async () => {
+    const calls: { url: string; body: unknown }[] = [];
+    const fetchImpl = ((url: string, init?: RequestInit) => {
+      calls.push({ url, body: JSON.parse(init?.body as string) });
+      return Promise.resolve(new Response(JSON.stringify(url.endsWith("/sessions") ? { id: "s", status: "created" } : { id: 42, status: "saved" }), { status: 201 }));
+    }) as unknown as typeof fetch;
+    const id = await new EngramAdapter("http://e", fetchImpl).save("demo-project", { title: "t", type: "learning", content: "c\nRef: TASK-001/review" });
+    expect(id).toBe(42);
+    expect(calls).toEqual([
+      { url: "http://e/sessions", body: { id: "forge-backend-demo-project", project: "demo-project" } },
+      { url: "http://e/observations", body: { session_id: "forge-backend-demo-project", project: "demo-project", capture_prompt: false, title: "t", type: "learning", content: "c\nRef: TASK-001/review" } },
+    ]);
+  });
+});

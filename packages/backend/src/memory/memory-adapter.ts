@@ -19,6 +19,8 @@ export interface MemoryAdapter {
   search(project: string, query: string, limit?: number): Promise<Memory[]>;
   /** Memories whose content carries a `TASK-xxx/<step>` reference to this task. */
   listByTask(project: string, taskId: string): Promise<Memory[]>;
+  /** Saves one observation in the project, under a backend-owned session. */
+  save(project: string, observation: { title: string; type: string; content: string }): Promise<number>;
 }
 
 export const REF_PATTERN = /\b(TASK-\d{3,})\/([a-z][a-z0-9-]*)\b/;
@@ -49,6 +51,29 @@ export class EngramAdapter implements MemoryAdapter {
   async listByTask(project: string, taskId: string): Promise<Memory[]> {
     const recent = await this.get("/observations", { project, limit: "500" });
     return recent.filter((m) => m.ref?.startsWith(`${taskId}/`));
+  }
+
+  async save(project: string, observation: { title: string; type: string; content: string }): Promise<number> {
+    // Engram only accepts observations for an existing session; creating it is idempotent.
+    const session = `forge-backend-${project}`;
+    await this.post("/sessions", { id: session, project });
+    const saved = z.object({ id: z.number() }).parse(await this.post("/observations", { session_id: session, project, capture_prompt: false, ...observation }));
+    return saved.id;
+  }
+
+  private async post(path: string, body: unknown): Promise<unknown> {
+    let response: Response;
+    try {
+      response = await this.fetchImpl(`${this.baseUrl}${path}`, {
+        method: "POST",
+        headers: { "content-type": "application/json", ...(this.token ? { authorization: `Bearer ${this.token}` } : {}) },
+        body: JSON.stringify(body),
+      });
+    } catch (error) {
+      throw new MemoryUnavailableError(`Engram not reachable at ${this.baseUrl}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    if (!response.ok) throw new MemoryUnavailableError(`Engram ${path} answered HTTP ${response.status}`);
+    return response.json();
   }
 
   private async get(path: string, params: Record<string, string>): Promise<Memory[]> {

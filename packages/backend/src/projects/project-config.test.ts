@@ -4,7 +4,7 @@ import { listBacklog, loadProjectConfig } from "./project-config.js";
 
 describe("project config", () => {
   it("reads the fixture project.yaml with review defaults", () => {
-    expect(loadProjectConfig(FIXTURE)).toMatchObject({ name: "demo-project", platforms: ["web"], review: { allowed_authors: [] } });
+    expect(loadProjectConfig(FIXTURE)).toMatchObject({ name: "demo-project", platforms: ["web"], review: { allowed_authors: ["sd8956"], poll_interval_seconds: 60 } });
   });
 
   it("lists the backlog with titles, sizes, coverage and dependencies", () => {

@@ -4,6 +4,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { activityHookInput, notificationHookInput, preToolUseHookInput, sessionEndHookInput, startRunRequest, stopHookInput } from "@forge/shared";
 import { z } from "zod";
 import { TOKEN_HEADER, tokenMatches } from "../auth.js";
+import type { PrThreadStore } from "../db/pr-thread-store.js";
 import type { ProjectStore } from "../db/project-store.js";
 import { DuplicateRunError, toRunView, type RunStore } from "../db/run-store.js";
 import { toStepView, type StepStore } from "../db/step-store.js";
@@ -31,6 +32,8 @@ interface ServerDeps {
   port: () => number;
   baseUrl: () => string;
   webDist: string;
+  archiveDir: (runId: string) => string;
+  threads: PrThreadStore;
   bus: EventBus;
   logger?: boolean;
 }
@@ -91,6 +94,7 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     runs: deps.runs,
     codes: deps.codes,
     webDist: deps.webDist,
+    archiveDir: deps.archiveDir,
   });
 
   // ------------------------------------------------------------- hooks
@@ -182,7 +186,17 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
       (list) => ({ available: true, items: list.map(({ id, title, ref, createdAt }) => ({ id, title, ref, createdAt })) }),
       (error: unknown) => ({ available: false, error: error instanceof Error ? error.message : String(error), items: [] }),
     );
-    return { ...toRunView(run), steps: deps.runs.steps(run.id).map(toStepView), events: deps.store.events(run.id), memories };
+    const prThreads = deps.threads.list(run.id).map(({ externalId, kind, author, path, line, url, handledByStepId, body }) => ({
+      id: externalId,
+      kind,
+      author,
+      path,
+      line,
+      url,
+      handled: handledByStepId !== null,
+      body: body.slice(0, 2000),
+    }));
+    return { ...toRunView(run), steps: deps.runs.steps(run.id).map(toStepView), events: deps.store.events(run.id), memories, prThreads };
   });
 
   app.post("/runs/:runId/resume", async (request, reply) => {

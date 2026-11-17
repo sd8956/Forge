@@ -102,6 +102,8 @@ export function toRunView(row: RunRow): RunView {
     attempts: row.attempts,
     prUrl: row.prUrl,
     prNumber: row.prNumber,
+    mode: row.mode,
+    reviewRound: row.reviewRound,
     exitReason: row.exitReason,
     createdAt: row.createdAt,
     endedAt: row.endedAt,

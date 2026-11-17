@@ -17,6 +17,7 @@ export interface PanelDeps {
   codes: LoginCodes;
   /** Built panel (`packages/web/dist`); the panel routes still work without it. */
   webDist: string;
+  archiveDir: (runId: string) => string;
 }
 
 const CONTENT_TYPES: Record<string, string> = {
@@ -34,9 +35,8 @@ const CONTENT_TYPES: Record<string, string> = {
  * Resolves a file of a run's handoff directory (`.factory/runs/<TASK>/`),
  * refusing anything outside it, including through symlinks.
  */
-export function resolveRunFile(worktreePath: string, taskId: string, requested: string): string | null {
-  if (!requested || isAbsolute(requested)) return null;
-  const root = join(worktreePath, ".factory", "runs", taskId);
+export function resolveRunFile(root: string, requested: string): string | null {
+  if (!requested || isAbsolute(requested) || !existsSync(root)) return null;
   const target = resolve(root, requested);
   const rel = relative(root, target);
   if (rel === "" || rel.startsWith("..") || isAbsolute(rel)) return null;
@@ -98,7 +98,9 @@ export async function registerPanelRoutes(app: FastifyInstance, deps: PanelDeps)
     if (!params.success || !query.success) return reply.code(400).send({ error: "invalid_request" });
     const run = deps.runs.get(params.data.runId);
     if (!run) return reply.code(404).send({ error: "unknown_run" });
-    const file = resolveRunFile(run.worktreePath, run.taskId, query.data.path);
+    // A merged run's worktree is gone; its handoffs were archived in the backend home.
+    const live = join(run.worktreePath, ".factory", "runs", run.taskId);
+    const file = resolveRunFile(existsSync(live) ? live : deps.archiveDir(run.id), query.data.path);
     if (!file) return reply.code(404).send({ error: "unknown_file" });
     return reply
       .type(CONTENT_TYPES[extname(file)] ?? "application/octet-stream")
