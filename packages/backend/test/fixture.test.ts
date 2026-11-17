@@ -34,6 +34,11 @@ describe("demo-project fixture contract", () => {
     expect(fixer?.settings.permissions.allow.some((r) => r.startsWith("Bash(gh api -X POST repos/:"))).toBe(false);
   });
 
+  it("lets the pr step look up an existing PR and development run the e2e suite without a prompt", () => {
+    expect(steps.find((s) => s.step.id === "pr")?.settings.permissions.allow).toContain("Bash(gh pr list:*)");
+    expect(steps.find((s) => s.step.id === "development")?.settings.permissions.allow).toContain("Bash(make e2e:*)");
+  });
+
   it("gives the orchestrator read-only tools and the factory MCP server, never Bash or writes", () => {
     const agent = readFileSync(join(FIXTURE, ".claude", "agents", "forge-orchestrator.md"), "utf8");
     const frontmatter = parse(/^---\n([\s\S]*?)\n---/.exec(agent)?.[1] ?? "") as { tools: string };
