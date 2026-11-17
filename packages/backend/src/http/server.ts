@@ -15,6 +15,8 @@ import { StepRequestError, type StepService } from "../steps/step-service.js";
 import { isLocalHost, isLocalOrigin, type LoginCodes, readCookie, SESSION_COOKIE, verifySessionCookie } from "./panel-auth.js";
 import { registerPanelRoutes } from "./panel-routes.js";
 import { registerWsRoutes } from "./ws-routes.js";
+import { runEvidence } from "./evidence.js";
+import { join } from "node:path";
 import type { EventBus } from "../events/event-bus.js";
 
 interface ServerDeps {
@@ -175,7 +177,20 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     }
   });
 
-  app.get("/runs", () => deps.runs.list().map(toRunView));
+  app.get("/runs", () =>
+    deps.runs.list().map((run) => {
+      const latest = deps.runs.latestStep(run.id);
+      return { ...toRunView(run), latestStep: latest ? toStepView(latest) : null };
+    }),
+  );
+
+  app.get("/runs/:runId/evidence", async (request, reply) => {
+    const params = runIdParams.safeParse(request.params);
+    if (!params.success) return badRequest(reply, params.error);
+    const run = deps.runs.get(params.data.runId);
+    if (!run) return reply.code(404).send({ error: "unknown_run" });
+    return runEvidence(deps.runs.steps(run.id), () => join(run.worktreePath, ".factory", "runs", run.taskId));
+  });
 
   app.get("/runs/:runId", async (request, reply) => {
     const params = runIdParams.safeParse(request.params);

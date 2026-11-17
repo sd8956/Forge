@@ -104,6 +104,17 @@ describe("panel access", () => {
     expect((await file("evil/link.txt")).status).toBe(404);
   });
 
+  it("summarises a run's test plan, evidence and security for the panel", async () => {
+    const { api, project } = await setup();
+    const run = await api.waitForRun((await api.startRun(project)).id, "waiting_review");
+    const list = (await api.request("GET", "/runs")).body as { id: string; latestStep: { kind: string; status: string } }[];
+    expect(list.find((r) => r.id === run.id)?.latestStep).toMatchObject({ kind: "plan", status: "done" });
+    const evidence = (await api.request("GET", `/runs/${run.id}/evidence`)).body as { testPlan: { id: string; covers: string[] }[]; cases: unknown[]; security: unknown };
+    expect(evidence.testPlan.map((t) => t.id)).toEqual(["TC-01", "TC-02", "TC-03", "TC-04"]);
+    expect(evidence.testPlan[0]?.covers).toEqual(["AC-1"]);
+    expect(evidence).toMatchObject({ cases: [], security: null });
+  });
+
   it("explains how to build the panel when it is not built", async () => {
     const { backend } = await setup();
     const res = await raw(`${backend.url}/`);
