@@ -112,15 +112,22 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     if ((changesState || websocket) && !isLocalOrigin(request.headers.origin, deps.port())) return refuse(403, "forbidden_origin");
   });
 
+  const controlled = new Map<string, string>();
   await registerWsRoutes(app, {
     bus: deps.bus,
     store: deps.store,
     tmuxSocket: deps.tmuxSocket,
     orchestratorSession: async (projectId) => {
       const project = deps.projects.get(projectId);
-      return project ? ((await deps.orchestrator.status(project))?.tmuxSession ?? null) : null;
+      return project ? await deps.orchestrator.status(project) : null;
     },
-    onOrchestratorControl: (projectId) => deps.plans.recordEvent("plan", projectId, "orchestrator_control", { via: "panel" }),
+    // The panel reconnects the orchestrator terminal on every render; record the takeover once per session.
+    onOrchestratorControl: (projectId, session) => {
+      const key = `${session.tmuxSession}@${session.startedAt}`;
+      if (controlled.get(projectId) === key) return;
+      controlled.set(projectId, key);
+      deps.plans.recordEvent("plan", projectId, "orchestrator_control", { via: "panel", session: session.tmuxSession });
+    },
   });
 
   registerDefinitionRoutes(app, deps.definition);

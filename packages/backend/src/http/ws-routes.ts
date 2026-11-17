@@ -12,8 +12,8 @@ export interface WsDeps {
   store: StepStore;
   tmuxSocket: string;
   /** tmux session of a project's live orchestrator, if any. */
-  orchestratorSession: (projectId: string) => Promise<string | null>;
-  onOrchestratorControl: (projectId: string) => void;
+  orchestratorSession: (projectId: string) => Promise<{ tmuxSession: string; startedAt: number } | null>;
+  onOrchestratorControl: (projectId: string, session: { tmuxSession: string; startedAt: number }) => void;
 }
 
 const terminalMessage = z.discriminatedUnion("type", [
@@ -66,8 +66,8 @@ export async function registerWsRoutes(app: FastifyInstance, deps: WsDeps): Prom
       return;
     }
     const control = query.data.mode === "control";
-    if (control) deps.onOrchestratorControl(params.data.projectId);
-    attachTerminal(socket, deps.tmuxSocket, session, control);
+    if (control) deps.onOrchestratorControl(params.data.projectId, session);
+    attachTerminal(socket, deps.tmuxSocket, session.tmuxSession, control);
   });
 }
 
