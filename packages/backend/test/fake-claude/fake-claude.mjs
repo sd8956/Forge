@@ -4,7 +4,7 @@
 // that step kind, sends the hooks from --settings over HTTP and calls report_step through the
 // --mcp-config server.
 //
-// FAKE_CLAUDE_SCRIPT: JSON {"<step kind>": ["<behaviour for attempt 1>", "<attempt 2>", ...], "default": "done"}
+// FAKE_CLAUDE_SCRIPT: JSON {"<step kind>" or "<TASK>:<step kind>": ["<behaviour for attempt 1>", ...], "default": "done"}
 // Behaviours: done, failed, blocked, stop-then-report, never-report, permission, wait-release,
 // bad-output-then-fix, exit-without-report, crash, hang.
 // FAKE_CLAUDE_TRACE: JSONL file where the fake logs what it saw.
@@ -56,14 +56,23 @@ function trace(type, data = {}) {
 const inputPath = positionals[0]?.match(/Read (\S+) and run the step/)?.[1];
 const input = inputPath && existsSync(inputPath) ? readFileSync(inputPath, "utf8") : "";
 const field = (name) => new RegExp(`^- ${name}: \`?([^\`\\n]+)\`?`, "m").exec(input)?.[1];
-const kind = /^- Step: `([a-z0-9-]+)`/m.exec(input)?.[1] ?? "unknown";
+const kind = /^- Step: `([a-z0-9_-]+)`/m.exec(input)?.[1] ?? "unknown";
 const attempt = Number(field("Attempt") ?? 1);
 const outputDir = field("Output directory");
 const taskId = /^# Step input: \S+ — (TASK-\d+)/m.exec(input)?.[1];
 const template = parse(/```yaml\n---\n([\s\S]*?)\n---\n```/.exec(input)?.[1] ?? "{}") ?? {};
 
 const script = JSON.parse(process.env.FAKE_CLAUDE_SCRIPT ?? "{}");
-const behaviour = script[kind]?.[attempt - 1] ?? script.default ?? "done";
+// "TASK-003:plan" beats "plan", so one backend can run different scripts per task.
+const behaviour = script[`${taskId}:${kind}`]?.[attempt - 1] ?? script[kind]?.[attempt - 1] ?? script.default ?? "done";
+
+// Something on the screen for the terminal bridge, and a record of what a person types.
+process.stdout.write(`fake claude ready: ${kind} attempt ${attempt}\r\n`);
+process.stdin.on("data", (chunk) => trace("stdin", { data: chunk.toString() }));
+// When tmux kills the session the pty goes away: reading or writing it fails with EIO. Without these
+// handlers that error would crash the fake before it sends SessionEnd, as the real CLI does.
+process.stdin.on("error", () => undefined);
+process.stdout.on("error", () => undefined);
 
 trace("started", {
   agent: flags["--agent"],
@@ -132,6 +141,23 @@ function produce(status) {
       out("pr.md", "## Summary\nFake PR.\n");
       Object.assign(extras, { pr_url: "https://github.com/example/demo-project/pull/7", pr_number: 7 });
       break;
+    case "review_fix": {
+      const threads = [...input.matchAll(/^### `([^`]+)`/gm)].map((m) => m[1]);
+      const prNumber = /already has PR #(\d+)/.exec(input)?.[1];
+      const answered = threads.map((id) => {
+        const reply = `Fake fix for ${id}. <!-- forge:reply -->`;
+        const commentId = /^review_comment:(\d+)$/.exec(id)?.[1];
+        if (commentId && prNumber && process.env.FAKE_GH_BIN) {
+          execFileSync(process.env.FAKE_GH_BIN, ["api", "-X", "POST", `repos/o/r/pulls/${prNumber}/comments/${commentId}/replies`, "-f", `body=${reply}`]);
+        }
+        return { id, action: "fixed", reply };
+      });
+      out("replies.md", `# Replies\n${answered.map((t) => `- ${t.id}: ${t.reply}`).join("\n")}\n`);
+      execFileSync("git", ["-c", "user.name=fake", "-c", "user.email=fake@example.invalid", "commit", "-q", "--allow-empty", "-m", `fix: address review attempt ${attempt}`]);
+      Object.assign(extras, { threads: answered, commits: [execFileSync("git", ["rev-parse", "--short", "HEAD"], { encoding: "utf8" }).trim()] });
+      trace("review_fix", { threads, prNumber });
+      break;
+    }
   }
   const outputMd = join(outputDir, "output.md");
   const artifacts = [outputMd, ...files];

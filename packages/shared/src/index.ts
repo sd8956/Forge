@@ -15,7 +15,7 @@ export const RUN_STATUSES = ["queued", "running", "waiting_review", "needs_human
 export type RunStatus = (typeof RUN_STATUSES)[number];
 
 /** Pipeline step kinds the backend knows how to hand off and validate, in pipeline order. */
-export const STEP_KINDS = ["plan", "design", "development", "security", "e2e", "pr"] as const;
+export const STEP_KINDS = ["plan", "design", "development", "security", "e2e", "pr", "review_fix"] as const;
 export type StepKind = (typeof STEP_KINDS)[number];
 
 /** Statuses an agent may report through the `report_step` MCP tool. */
@@ -100,6 +100,8 @@ export interface RunView {
   attempts: Partial<Record<StepKind, number>>;
   prUrl: string | null;
   prNumber: number | null;
+  mode: "build" | "review";
+  reviewRound: number;
   exitReason: string | null;
   createdAt: number;
   endedAt: number | null;

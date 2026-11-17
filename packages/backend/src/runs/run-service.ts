@@ -1,13 +1,16 @@
 import { execFile } from "node:child_process";
+import { cpSync, mkdirSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { promisify } from "node:util";
 import { isTerminalStepStatus, type ReportStepInput, type StepKind } from "@forge/shared";
 import type { ForgeConfig } from "../config.js";
+import type { PrThreadStore } from "../db/pr-thread-store.js";
 import type { RunStore } from "../db/run-store.js";
+import type { MemoryAdapter } from "../memory/memory-adapter.js";
 import type { RunRow, StepRow } from "../db/schema.js";
-import { decideNext, firstStep, type Attempts, type StepOutcome } from "../domain/next-action.js";
+import { decideNext, firstStep, stepsFor, type Attempts, type RunMode, type StepOutcome } from "../domain/next-action.js";
 import { isOpenRunStatus } from "../domain/run-machine.js";
 import { STEP_CONTRACTS } from "../handoff/contracts.js";
 import { parseFrontmatter } from "../handoff/frontmatter.js";
@@ -33,6 +36,10 @@ interface Deps {
   config: ForgeConfig;
   runs: RunStore;
   steps: StepService;
+  threads: PrThreadStore;
+  memory: MemoryAdapter;
+  /** Engram project of a target project path. */
+  memoryProject: (projectPath: string) => string;
   now?: () => number;
   log?: (msg: string, extra?: Record<string, unknown>) => void;
 }
@@ -153,7 +160,11 @@ export class RunService implements StepPolicy {
 
     if (latest && latest.id !== run.lastHandledStepId) {
       const pipeline = loadPipeline(run.projectPath);
-      const action = decideNext(pipeline, run.attempts, outcomeOf(latest));
+      const action = decideNext(pipeline, run.attempts, outcomeOf(latest), run.mode);
+      if (latest.kind === "review_fix" && latest.status === "done") {
+        // The report was validated against these threads, so they are answered now.
+        this.deps.threads.markHandled(runId, this.deps.threads.unhandled(runId).map((t) => t.externalId), latest.id);
+      }
       runs.recordEvent(runId, "step_outcome", { step: latest.kind, stepId: latest.id, status: latest.status, exitReason: latest.exitReason, action: action.kind });
       run = this.mustGet(runId);
       // The step that needed a person has finished: the run is back on track.
@@ -189,22 +200,25 @@ export class RunService implements StepPolicy {
 
   private async launch(run: RunRow, kind: StepKind): Promise<StepRow> {
     const pipeline = loadPipeline(run.projectPath);
-    const def = stepById(pipeline, kind);
+    const def = stepsFor(pipeline, run.mode).find((s) => s.id === kind) ?? stepById(pipeline, kind);
     const contract = STEP_CONTRACTS[kind];
     const history = this.deps.runs.steps(run.id);
     const attempt = this.attemptFor(run, kind);
     const outputDir = outputDirFor(run.taskId, kind, attempt);
     const rel = (p: string) => relative(run.worktreePath, p);
 
+    const modeSteps = stepsFor(pipeline, run.mode);
+    // In review mode the context is the build's plan, design and development, then the review steps so far.
+    const order = run.mode === "build" ? pipeline.steps : [...pipeline.steps.filter((s) => !modeSteps.some((m) => m.id === s.id)), ...modeSteps];
     const previous: PreviousStep[] = [];
-    for (const step of pipeline.steps) {
+    for (const step of order) {
       if (step.id === kind) break;
       const done = history.filter((s) => s.kind === step.id && s.status === "done").at(-1);
       if (done) previous.push({ kind: step.id, output: rel(done.outputPath), summary: done.summary ?? "", artifacts: done.artifacts ?? [] });
     }
 
     const last = run.lastHandledStepId ? history.find((s) => s.id === run.lastHandledStepId) : undefined;
-    const lastDef = last ? pipeline.steps.find((s) => s.id === last.kind) : undefined;
+    const lastDef = last ? (modeSteps.find((s) => s.id === last.kind) ?? pipeline.steps.find((s) => s.id === last.kind)) : undefined;
     const failure =
       last && lastDef && last.status === "failed"
         ? {
@@ -241,6 +255,18 @@ export class RunService implements StepPolicy {
       exit: def.exit,
       previous,
       failure,
+      pullRequest: run.prNumber && run.prUrl ? { number: run.prNumber, url: run.prUrl } : undefined,
+      threads:
+        kind === "review_fix"
+          ? this.deps.threads.unhandled(run.id).map((t) => ({
+              id: t.externalId,
+              kind: t.kind,
+              author: t.author,
+              location: t.path ? `${t.path}${t.line ? `:${t.line}` : ""}` : null,
+              url: t.url,
+              body: t.body,
+            }))
+          : undefined,
     });
 
     return this.deps.steps.start({
@@ -307,13 +333,88 @@ export class RunService implements StepPolicy {
     return { ok: true, message: "Run cancelled." };
   }
 
+  // ------------------------------------------------------------ review loop
+
+  /**
+   * The PR watcher found new comments or a failed check: start a review round
+   * (review_fix, then the re-verification steps), or hand the run to a person
+   * when the rounds are spent.
+   */
+  async requestReview(runId: string, cause: string): Promise<void> {
+    const run = this.mustGet(runId);
+    if (run.status !== "waiting_review") return;
+    const pipeline = loadPipeline(run.projectPath);
+    if (!pipeline.review) {
+      this.deps.runs.recordEvent(runId, "review_skipped", { cause, why: "pipeline has no review loop" });
+      return;
+    }
+    const round = run.reviewRound + 1;
+    const latest = this.deps.runs.latestStep(runId);
+    const mode: RunMode = "review";
+    this.deps.runs.transition(
+      runId,
+      "review_requested",
+      { mode, reviewRound: round, currentStep: firstStep(pipeline, mode), attempts: {}, lastHandledStepId: latest?.id ?? null, exitReason: null, endedAt: null },
+      { cause, round },
+    );
+    if (round > pipeline.review.max_rounds) {
+      this.deps.runs.transition(runId, "attention", { exitReason: `review_rounds_exhausted:${pipeline.review.max_rounds}` });
+      return;
+    }
+    await this.advance(runId);
+  }
+
+  /**
+   * The PR was merged: archive the handoffs, remove the worktree and keep what
+   * review taught, then mark the run done, so `done` always means cleaned up.
+   */
+  async onPrMerged(runId: string): Promise<void> {
+    const run = this.mustGet(runId);
+    if (run.status !== "waiting_review") return;
+    const handoffs = join(run.worktreePath, ".factory", "runs", run.taskId);
+    if (existsSync(handoffs)) {
+      const archive = archiveDirFor(this.deps.config.home, run.id);
+      mkdirSync(archive, { recursive: true });
+      cpSync(handoffs, archive, { recursive: true });
+    }
+    const removed = await git("git", ["-C", run.projectPath, "worktree", "remove", "--force", run.worktreePath], { encoding: "utf8" }).then(
+      () => true,
+      (error: unknown) => {
+        this.deps.runs.recordEvent(runId, "worktree_remove_failed", { error: String(error) });
+        return false;
+      },
+    );
+    if (removed) this.deps.runs.recordEvent(runId, "worktree_removed", { path: run.worktreePath });
+
+    const handled = this.deps.threads.list(runId).filter((t) => t.handledByStepId && t.kind !== "check");
+    if (handled.length) {
+      const content = [
+        `**What**: Review feedback on ${run.taskId}, merged as PR #${run.prNumber ?? "?"}.`,
+        ...handled.map((t) => `- ${t.author ? `@${t.author}` : "CI"}${t.path ? ` on ${t.path}` : ""}: ${t.body.replaceAll("\n", " ").slice(0, 300)}`),
+        "**Learned**: reviewers asked for the above; check for it before opening the next PR.",
+        `Ref: ${run.taskId}/review`,
+      ].join("\n");
+      await this.deps.memory
+        .save(this.deps.memoryProject(run.projectPath), { title: `Review feedback on ${run.taskId}`, type: "learning", content })
+        .then(
+          (id) => this.deps.runs.recordEvent(runId, "review_feedback_saved", { observationId: id }),
+          (error: unknown) => this.deps.runs.recordEvent(runId, "review_feedback_not_saved", { error: String(error) }),
+        );
+    }
+    this.deps.runs.transition(runId, "merged", { endedAt: this.now(), exitReason: "merged" });
+  }
+
+  onPrClosed(runId: string): void {
+    this.deps.runs.transition(runId, "pr_closed", { endedAt: this.now(), exitReason: "pr_closed_without_merge" });
+  }
+
   // ------------------------------------------------------------ StepPolicy
 
   async validateReport(step: StepRow, input: ReportStepInput): Promise<{ ok: true } | { ok: false; issues: string[] }> {
     if (!step.runId) return { ok: true };
     const run = this.mustGet(step.runId);
     const pipeline = loadPipeline(run.projectPath);
-    const def = stepById(pipeline, step.kind as StepKind);
+    const def = stepsFor(pipeline, run.mode).find((s) => s.id === step.kind) ?? stepById(pipeline, step.kind as StepKind);
     const plan = this.deps.runs.steps(run.id).filter((s) => s.kind === "plan" && s.status === "done").at(-1);
     const result = await validateReport({
       kind: step.kind as StepKind,
@@ -325,6 +426,7 @@ export class RunService implements StepPolicy {
       reported: input,
       taskSpecPath: join(step.worktreePath, ".factory", "backlog", `${step.taskId}.md`),
       testPlanPath: plan ? join(dirname(plan.outputPath), "test-plan.md") : undefined,
+      threadIds: step.kind === "review_fix" ? this.deps.threads.unhandled(run.id).map((t) => t.externalId) : undefined,
       runCommand: (command, cwd) => runShell(command, cwd, this.deps.config.checkTimeoutMs),
     });
     return result.ok ? { ok: true } : result;
@@ -362,6 +464,11 @@ export class RunService implements StepPolicy {
     if (!row) throw new Error(`Unknown run ${id}`);
     return row;
   }
+}
+
+/** Where a merged run's handoffs are kept once its worktree is removed. */
+export function archiveDirFor(home: string, runId: string): string {
+  return join(home, "archive", runId);
 }
 
 export function outcomeOf(step: StepRow): StepOutcome {

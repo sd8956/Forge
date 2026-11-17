@@ -11,6 +11,7 @@ const USAGE = `Usage:
   pnpm forge status [<run-id>]
   pnpm forge resume <run-id> [--no-wait]
   pnpm forge cancel <run-id>
+  pnpm forge login                 prints a one-time link that opens the panel
 
 Exit codes of run-task and resume: 0 waiting_review, 1 failed, 3 needs_human, 4 cancelled.
 
@@ -45,6 +46,7 @@ async function serve(): Promise<void> {
   const config = loadConfig();
   const backend = await startBackend(config, { logger: false });
   console.log(`Forge backend listening on ${backend.url} (home ${config.home}, tmux socket "${config.tmuxSocket}")`);
+  console.log(`Open the panel: ${backend.loginLink()}`);
   const { resumed, orphaned } = backend.reconciled;
   if (resumed.length || orphaned.length) console.log(`Reconciled steps: ${resumed.length} resumed, ${orphaned.length} orphaned`);
   const stop = () => {
@@ -145,6 +147,10 @@ async function main(): Promise<number> {
       const result = await api<{ message: string }>(`/runs/${positionals[0]}/resume`, { method: "POST", body: "{}" });
       console.log(result.message);
       return values["no-wait"] ? 0 : waitForRun(positionals[0]);
+    }
+    case "login": {
+      console.log((await api<{ url: string }>("/auth/login-link", { method: "POST", body: "{}" })).url);
+      return 0;
     }
     case "cancel": {
       if (!rest[0]) throw new Error(`Missing run id.\n${USAGE}`);

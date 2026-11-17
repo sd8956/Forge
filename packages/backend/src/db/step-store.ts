@@ -19,6 +19,7 @@ export class StepStore {
   constructor(
     private readonly db: Db,
     private readonly now: () => number = Date.now,
+    private readonly onEvent: (event: EventRow) => void = () => undefined,
   ) {}
 
   insert(row: Omit<NewStepRow, "status" | "createdAt">): StepRow {
@@ -102,7 +103,7 @@ export class StepStore {
   }
 
   private appendEvent(db: Pick<Db, "insert">, entityId: string, type: string, payload: Record<string, unknown>, entity = "step"): void {
-    db.insert(events).values({ entity, entityId, type, payload, ts: this.now() }).run();
+    this.onEvent(db.insert(events).values({ entity, entityId, type, payload, ts: this.now() }).returning().get());
   }
 }
 

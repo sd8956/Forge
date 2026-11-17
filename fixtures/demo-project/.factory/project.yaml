@@ -15,4 +15,6 @@ policies:
   step_timeout_minutes: 45
   max_stop_blocks: 3
 review:
-  allowed_authors: []
+  # GitHub logins whose PR comments the review loop handles; anyone else is ignored.
+  allowed_authors: [sd8956]
+  poll_interval_seconds: 60

@@ -33,6 +33,8 @@ export interface ReportContext {
   taskSpecPath: string;
   /** Absolute path of the test plan written by the latest successful plan step. */
   testPlanPath?: string | undefined;
+  /** PR threads the step was asked to answer (review_fix). */
+  threadIds?: string[] | undefined;
   runCommand: (command: string, cwd: string) => Promise<CommandResult>;
 }
 
@@ -120,6 +122,12 @@ function checkExitCriteria(ctx: ReportContext, extras: Record<string, unknown>):
   }
 
   if (ctx.exit.all_cases_pass) issues.push(...checkEvidence(ctx, extras));
+
+  if (ctx.exit.threads_answered) {
+    const answered = new Set(((extras.threads ?? []) as { id: string }[]).map((t) => t.id));
+    const missing = (ctx.threadIds ?? []).filter((id) => !answered.has(id));
+    if (missing.length) issues.push(`output.md does not answer ${missing.join(", ")}`);
+  }
   return issues;
 }
 

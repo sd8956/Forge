@@ -7,7 +7,7 @@ export default tseslint.config(
   ...tseslint.configs.recommendedTypeChecked,
   {
     languageOptions: {
-      parserOptions: { projectService: { allowDefaultProject: ["*.js", "packages/backend/test/fake-claude/*.mjs"] }, tsconfigRootDir: import.meta.dirname },
+      parserOptions: { projectService: { allowDefaultProject: ["*.js", "packages/backend/test/fake-claude/*.mjs", "packages/backend/test/fake-gh/*.mjs"] }, tsconfigRootDir: import.meta.dirname },
     },
     rules: {
       "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_" }],

@@ -26,6 +26,16 @@ describe("parsePipeline", () => {
     expect(pipeline.steps[2]?.on_fail).toEqual({ goto: "development", max_attempts: 2 });
   });
 
+  it("parses the review loop and defaults max_rounds", () => {
+    const withReview = parsePipeline(`${VALID}review:\n  fix: { id: review_fix, agent: forge-review-fixer, model: sonnet, settings: steps/review-fixer.settings.json, exit: { threads_answered: true } }\n  then: [security]\n`);
+    expect(withReview.review).toMatchObject({ max_rounds: 3, fix: { id: "review_fix", max_attempts: 3 }, then: ["security"] });
+    expect(parsePipeline(VALID).review).toBeUndefined();
+  });
+
+  it("rejects a review loop that names steps outside the pipeline", () => {
+    expect(() => parsePipeline(`${VALID}review:\n  fix: { id: review_fix, agent: forge-review-fixer, model: sonnet, settings: s.json }\n  then: [e2e]\n`)).toThrow("not in the pipeline");
+  });
+
   it("picks the model by task size, falling back to the default", () => {
     const [plan, dev] = parsePipeline(VALID).steps;
     expect(modelFor(plan!, "L")).toBe("opus");

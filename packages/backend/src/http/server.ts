@@ -1,14 +1,24 @@
+import type { Duplex } from "node:stream";
 import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { activityHookInput, notificationHookInput, preToolUseHookInput, sessionEndHookInput, startRunRequest, stopHookInput } from "@forge/shared";
 import { z } from "zod";
 import { TOKEN_HEADER, tokenMatches } from "../auth.js";
+import type { PrThreadStore } from "../db/pr-thread-store.js";
+import type { ProjectStore } from "../db/project-store.js";
 import { DuplicateRunError, toRunView, type RunStore } from "../db/run-store.js";
 import { toStepView, type StepStore } from "../db/step-store.js";
 import { createFactoryMcpServer } from "../mcp/factory-server.js";
 import type { MemoryAdapter } from "../memory/memory-adapter.js";
 import { RunRequestError, type RunService } from "../runs/run-service.js";
 import { StepRequestError, type StepService } from "../steps/step-service.js";
+import { isLocalHost, isLocalOrigin, type LoginCodes, readCookie, SESSION_COOKIE, verifySessionCookie } from "./panel-auth.js";
+import { registerPanelRoutes } from "./panel-routes.js";
+import { registerWsRoutes } from "./ws-routes.js";
+import { runEvidence } from "./evidence.js";
+import { listBacklog } from "../projects/project-config.js";
+import { join } from "node:path";
+import type { EventBus } from "../events/event-bus.js";
 
 interface ServerDeps {
   token: string;
@@ -19,7 +29,22 @@ interface ServerDeps {
   memory: MemoryAdapter;
   /** Engram project name for a project path (from project.yaml). */
   memoryProject: (projectPath: string) => string;
+  projects: ProjectStore;
+  codes: LoginCodes;
+  /** Port the backend listens on, once known (the Host and Origin checks need it). */
+  port: () => number;
+  baseUrl: () => string;
+  webDist: string;
+  archiveDir: (runId: string) => string;
+  threads: PrThreadStore;
+  bus: EventBus;
+  tmuxSocket: string;
   logger?: boolean;
+}
+
+/** Reachable without credentials: the panel's static shell and the login link. */
+function isPublic(path: string): boolean {
+  return path === "/health" || path === "/login" || path === "/" || path.startsWith("/assets/") || path === "/favicon.svg";
 }
 
 const stepIdParams = z.object({ stepId: z.uuid() });
@@ -29,17 +54,51 @@ function badRequest(reply: FastifyReply, error: z.ZodError) {
   return reply.code(400).send({ error: "invalid_request", issues: error.issues });
 }
 
-export function buildServer(deps: ServerDeps): FastifyInstance {
-  const app = Fastify({ logger: deps.logger ?? false, bodyLimit: 1024 * 1024 });
+export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
+  const app = Fastify({ logger: deps.logger ?? false, bodyLimit: 1024 * 1024, forceCloseConnections: true });
+
+  // Upgraded and refused-upgrade sockets are not tracked by the HTTP server, so close them ourselves.
+  const upgradeSockets = new Set<Duplex>();
+  app.server.on("upgrade", (_request, socket: Duplex) => {
+    upgradeSockets.add(socket);
+    socket.once("close", () => upgradeSockets.delete(socket));
+  });
+  app.addHook("preClose", (done) => {
+    for (const socket of upgradeSockets) socket.destroy();
+    done();
+  });
 
   app.get("/health", () => ({ ok: true }));
 
-  // Everything except /health needs the local token: the backend can launch shells.
+  // The backend can launch shells: every request must come to a local Host name, and everything but
+  // the public shell needs the local token (CLI, hooks, MCP) or the panel's session cookie. Cookie
+  // requests that change state, and WebSockets, must also come from the panel's own Origin.
   app.addHook("onRequest", async (request, reply) => {
-    if (request.url === "/health") return;
-    if (!tokenMatches(deps.token, request.headers[TOKEN_HEADER])) {
-      await reply.code(401).send({ error: "unauthorized" });
-    }
+    const refuse = async (code: number, error: string) => {
+      await reply.code(code).send({ error });
+      // A refused WebSocket upgrade must not leave its socket open.
+      if (request.headers.upgrade) request.raw.socket.destroySoon();
+    };
+    if (!isLocalHost(request.headers.host, deps.port())) return refuse(403, "forbidden_host");
+    const path = request.url.split("?")[0] ?? "";
+    if (isPublic(path)) return;
+    if (tokenMatches(deps.token, request.headers[TOKEN_HEADER])) return;
+    if (!verifySessionCookie(deps.token, readCookie(request.headers.cookie, SESSION_COOKIE))) return refuse(401, "unauthorized");
+    const changesState = request.method !== "GET" && request.method !== "HEAD";
+    const websocket = request.headers.upgrade?.toLowerCase() === "websocket";
+    if ((changesState || websocket) && !isLocalOrigin(request.headers.origin, deps.port())) return refuse(403, "forbidden_origin");
+  });
+
+  await registerWsRoutes(app, { bus: deps.bus, store: deps.store, tmuxSocket: deps.tmuxSocket });
+
+  await registerPanelRoutes(app, {
+    token: deps.token,
+    baseUrl: deps.baseUrl,
+    projects: deps.projects,
+    runs: deps.runs,
+    codes: deps.codes,
+    webDist: deps.webDist,
+    archiveDir: deps.archiveDir,
   });
 
   // ------------------------------------------------------------- hooks
@@ -109,7 +168,9 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
     const parsed = startRunRequest.safeParse(request.body);
     if (!parsed.success) return badRequest(reply, parsed.error);
     try {
-      return await reply.code(201).send(toRunView(await deps.runService.start(parsed.data)));
+      const run = await deps.runService.start(parsed.data);
+      deps.projects.upsert(run.projectPath);
+      return await reply.code(201).send(toRunView(run));
     } catch (error) {
       if (error instanceof DuplicateRunError) return reply.code(409).send({ error: "duplicate_run", message: error.message, runId: error.runId });
       if (error instanceof RunRequestError || error instanceof StepRequestError) return reply.code(400).send({ error: "invalid_run", message: error.message });
@@ -117,7 +178,20 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
     }
   });
 
-  app.get("/runs", () => deps.runs.list().map(toRunView));
+  app.get("/runs", () =>
+    deps.runs.list().map((run) => {
+      const latest = deps.runs.latestStep(run.id);
+      return { ...toRunView(run), latestStep: latest ? toStepView(latest) : null };
+    }),
+  );
+
+  app.get("/runs/:runId/evidence", async (request, reply) => {
+    const params = runIdParams.safeParse(request.params);
+    if (!params.success) return badRequest(reply, params.error);
+    const run = deps.runs.get(params.data.runId);
+    if (!run) return reply.code(404).send({ error: "unknown_run" });
+    return runEvidence(deps.runs.steps(run.id), () => join(run.worktreePath, ".factory", "runs", run.taskId));
+  });
 
   app.get("/runs/:runId", async (request, reply) => {
     const params = runIdParams.safeParse(request.params);
@@ -129,7 +203,18 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
       (list) => ({ available: true, items: list.map(({ id, title, ref, createdAt }) => ({ id, title, ref, createdAt })) }),
       (error: unknown) => ({ available: false, error: error instanceof Error ? error.message : String(error), items: [] }),
     );
-    return { ...toRunView(run), steps: deps.runs.steps(run.id).map(toStepView), events: deps.store.events(run.id), memories };
+    const prThreads = deps.threads.list(run.id).map(({ externalId, kind, author, path, line, url, handledByStepId, body }) => ({
+      id: externalId,
+      kind,
+      author,
+      path,
+      line,
+      url,
+      handled: handledByStepId !== null,
+      body: body.slice(0, 2000),
+    }));
+    const task = listBacklog(run.projectPath).find((t) => t.id === run.taskId) ?? null;
+    return { ...toRunView(run), task, steps: deps.runs.steps(run.id).map(toStepView), events: deps.store.events(run.id), memories, prThreads };
   });
 
   app.post("/runs/:runId/resume", async (request, reply) => {

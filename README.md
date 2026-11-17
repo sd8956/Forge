@@ -3,7 +3,8 @@
 A local software factory that drives Claude Code sessions in tmux. The full definition is in
 [`docs/Forge — Project Definition.md`](docs/Forge%20—%20Project%20Definition.md).
 
-Current state: **Phase 1** (see [`docs/runs/f1.md`](docs/runs/f1.md)). One backlog task runs the whole
+Current state: **Phase 2** (see [`docs/runs/f2.md`](docs/runs/f2.md)): a local web panel, a PR watcher
+and a review loop on top of the Phase 1 pipeline (see [`docs/runs/f1.md`](docs/runs/f1.md)). One backlog task runs the whole
 pipeline (plan → design → development → security → e2e → pr) as separate `claude --agent` sessions in
 tmux and ends in `waiting_review` with a pull request. The backend learns each result only through hooks
 and the `report_step` MCP tool, validates it, and decides the next step.
@@ -19,7 +20,9 @@ and the `report_step` MCP tool, validates it, and decides the next step.
 
 ```bash
 pnpm install
-pnpm forge serve                                   # backend on 127.0.0.1:7420
+pnpm build:web                                     # build the panel once
+pnpm forge serve                                   # backend + panel on 127.0.0.1:7420, prints a login link
+pnpm forge login                                   # a new one-time panel login link
 pnpm forge run-task --project <path> --task TASK-001
 pnpm forge status [<run-id>]
 pnpm forge resume <run-id>                         # after a person fixed what needs_human asked for
@@ -35,7 +38,8 @@ the tool calls the backend's guard denied (ADR 0006). State lives in `./.forge/`
 ## Development
 
 ```bash
-pnpm test        # unit + integration tests (real tmux, fake claude)
+pnpm test        # unit + integration tests (real tmux, fake claude, fake gh)
+pnpm test:e2e    # panel end to end with Playwright
 pnpm lint
 pnpm typecheck
 ```

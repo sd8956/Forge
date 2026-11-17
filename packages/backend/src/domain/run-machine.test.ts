@@ -14,6 +14,10 @@ describe("run state machine", () => {
     ["queued", "cancel", "cancelled"],
     ["running", "cancel", "cancelled"],
     ["needs_human", "cancel", "cancelled"],
+    ["waiting_review", "review_requested", "running"],
+    ["waiting_review", "merged", "done"],
+    ["waiting_review", "pr_closed", "cancelled"],
+    ["waiting_review", "cancel", "cancelled"],
   ];
 
   it.each(allowed)("%s --%s--> %s", (from, event, to) => {
@@ -30,8 +34,8 @@ describe("run state machine", () => {
     }
   });
 
-  it("keeps waiting_review, done, failed and cancelled closed in Phase 1", () => {
-    for (const closed of ["waiting_review", "done", "failed", "cancelled"] as const) {
+  it("keeps done, failed and cancelled closed", () => {
+    for (const closed of ["done", "failed", "cancelled"] as const) {
       expect(RUN_TRANSITIONS.filter((t) => t.from.includes(closed))).toEqual([]);
     }
   });

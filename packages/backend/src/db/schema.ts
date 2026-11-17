@@ -47,6 +47,19 @@ export const steps = sqliteTable(
   ],
 );
 
+/** A target repository registered in Forge (one per repo). */
+export const projects = sqliteTable("project", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  repoPath: text("repo_path").notNull().unique(),
+  remote: text("remote"),
+  defaultBranch: text("default_branch").notNull(),
+  /** Parsed `.factory/project.yaml`, refreshed on every registration. */
+  config: text("config", { mode: "json" }).$type<Record<string, unknown>>().notNull(),
+  createdAt: integer("created_at").notNull(),
+  updatedAt: integer("updated_at").notNull(),
+});
+
 /** One pipeline run: a task going through every step. */
 export const runs = sqliteTable(
   "run",
@@ -64,6 +77,9 @@ export const runs = sqliteTable(
     attempts: text("attempts", { mode: "json" }).$type<Attempts>().notNull(),
     /** Last step whose outcome was applied; makes advancing idempotent across restarts. */
     lastHandledStepId: text("last_handled_step_id"),
+    /** build: first pass; review: a round started by the PR watcher. */
+    mode: text("mode", { enum: ["build", "review"] }).notNull().default("build"),
+    reviewRound: integer("review_round").notNull().default(0),
     prNumber: integer("pr_number"),
     prUrl: text("pr_url"),
     exitReason: text("exit_reason"),
@@ -78,6 +94,31 @@ export const runs = sqliteTable(
       .where(sql`status in ('queued', 'running', 'needs_human')`),
     index("run_status_idx").on(t.status),
   ],
+);
+
+/**
+ * A PR comment, review or failed check the watcher picked up. The unique
+ * (run, external id) pair is what keeps a thread from being handled twice,
+ * across restarts too.
+ */
+export const prThreads = sqliteTable(
+  "pr_thread",
+  {
+    id: text("id").primaryKey(),
+    runId: text("run_id").notNull(),
+    /** `review_comment:<id>`, `issue_comment:<id>`, `review:<id>` or `check:<name>@<sha>`. */
+    externalId: text("external_id").notNull(),
+    kind: text("kind", { enum: ["review_comment", "issue_comment", "review", "check"] }).notNull(),
+    author: text("author"),
+    path: text("path"),
+    line: integer("line"),
+    body: text("body").notNull(),
+    url: text("url"),
+    handledByStepId: text("handled_by_step_id"),
+    handledAt: integer("handled_at"),
+    createdAt: integer("created_at").notNull(),
+  },
+  (t) => [uniqueIndex("pr_thread_unique").on(t.runId, t.externalId), index("pr_thread_run_idx").on(t.runId)],
 );
 
 /** Append-only audit log. */
@@ -98,4 +139,6 @@ export type StepRow = typeof steps.$inferSelect;
 export type NewStepRow = typeof steps.$inferInsert;
 export type EventRow = typeof events.$inferSelect;
 export type RunRow = typeof runs.$inferSelect;
+export type ProjectRow = typeof projects.$inferSelect;
+export type PrThreadRow = typeof prThreads.$inferSelect;
 export type NewRunRow = typeof runs.$inferInsert;

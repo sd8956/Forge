@@ -11,6 +11,7 @@ import type { Tmux } from "../src/runner/tmux.js";
 
 export const REPO_ROOT = resolve(import.meta.dirname, "..", "..", "..");
 export const FAKE_CLAUDE = join(import.meta.dirname, "fake-claude", "fake-claude.mjs");
+export const FAKE_GH = join(import.meta.dirname, "fake-gh", "fake-gh.mjs");
 export const FIXTURE = join(REPO_ROOT, "fixtures", "demo-project");
 
 /** A one-step pipeline for tests about a single session's lifecycle. */
@@ -61,6 +62,9 @@ export function testConfig(root: string, overrides: Partial<ForgeConfig> = {}): 
     checkTrust: false,
     checkTimeoutMs: 60_000,
     engramUrl: "http://127.0.0.1:9",
+    webDist: join(root, "no-web"),
+    ghBin: FAKE_GH,
+    prPollIntervalMs: 200,
     ...overrides,
   };
 }
@@ -90,9 +94,14 @@ export class StubMemory implements MemoryAdapter {
   listByTask(_project: string, taskId: string): Promise<Memory[]> {
     return Promise.resolve(this.items.filter((m) => m.ref?.startsWith(`${taskId}/`)));
   }
+  readonly saved: { project: string; title: string; type: string; content: string }[] = [];
+  save(project: string, observation: { title: string; type: string; content: string }): Promise<number> {
+    this.saved.push({ project, ...observation });
+    return Promise.resolve(this.saved.length);
+  }
 }
 
-export async function waitFor<T>(probe: () => T | undefined | false | Promise<T | undefined | false>, what: string, timeoutMs = 20_000): Promise<T> {
+export async function waitFor<T>(probe: () => T | undefined | false | Promise<T | undefined | false>, what: string, timeoutMs = 30_000): Promise<T> {
   const start = Date.now();
   for (;;) {
     const value = await probe();
@@ -105,6 +114,7 @@ export async function waitFor<T>(probe: () => T | undefined | false | Promise<T 
 export type RunDetail = RunView & {
   steps: StepView[];
   events: EventRow[];
+  prThreads: { id: string; kind: string; author: string | null; path: string | null; line: number | null; url: string | null; handled: boolean; body: string }[];
   memories: { available: boolean; items: { id: number; title: string; ref: string | null }[] };
 };
 
