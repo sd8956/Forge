@@ -19,6 +19,7 @@ import { Tmux } from "./runner/tmux.js";
 import { archiveDirFor, RunService } from "./runs/run-service.js";
 import { SchedulerService } from "./runs/scheduler-service.js";
 import { PlanStore } from "./db/plan-store.js";
+import { OrchestratorService } from "./orchestrator/orchestrator-service.js";
 import { StepService } from "./steps/step-service.js";
 
 export interface Backend {
@@ -36,6 +37,7 @@ export interface Backend {
   threads: PrThreadStore;
   plans: PlanStore;
   scheduler: SchedulerService;
+  orchestrator: OrchestratorService;
   /** Stops the HTTP server and timers. tmux sessions are left running on purpose. */
   close: () => Promise<void>;
 }
@@ -80,6 +82,7 @@ export async function startBackend(config: ForgeConfig, opts: { logger?: boolean
   const plans = new PlanStore(db, Date.now, (event) => bus.publish(event));
   const queue = new SchedulerService({ config, plans, runs, threads, runService, log });
   schedulerRef.current = queue;
+  const orchestrator = new OrchestratorService({ config, tmux, plans, token, url: () => url });
   service.onRateLimit = (step) => queue.onRateLimit(step.id);
   const watcher = new PrWatcher({
     runs,
@@ -113,6 +116,9 @@ export async function startBackend(config: ForgeConfig, opts: { logger?: boolean
     archiveDir: (runId) => archiveDirFor(config.home, runId),
     threads,
     scheduler: queue,
+    plans,
+    orchestrator,
+    config,
     bus,
     tmuxSocket: config.tmuxSocket,
     logger: opts.logger ?? false,
@@ -144,6 +150,7 @@ export async function startBackend(config: ForgeConfig, opts: { logger?: boolean
     threads,
     plans,
     scheduler: queue,
+    orchestrator,
     close: async () => {
       unsubscribe();
       await queue.stop();

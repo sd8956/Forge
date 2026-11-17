@@ -5,11 +5,15 @@ import { isTerminalStepStatus } from "@forge/shared";
 import { z } from "zod";
 import type { StepStore } from "../db/step-store.js";
 import type { EventBus } from "../events/event-bus.js";
+import type { WebSocket } from "ws";
 
 export interface WsDeps {
   bus: EventBus;
   store: StepStore;
   tmuxSocket: string;
+  /** tmux session of a project's live orchestrator, if any. */
+  orchestratorSession: (projectId: string) => Promise<string | null>;
+  onOrchestratorControl: (projectId: string) => void;
 }
 
 const terminalMessage = z.discriminatedUnion("type", [
@@ -48,27 +52,48 @@ export async function registerWsRoutes(app: FastifyInstance, deps: WsDeps): Prom
       return;
     }
     const control = query.data.mode === "control";
-    const args = ["-L", deps.tmuxSocket, "attach", ...(control ? [] : ["-r"]), "-t", `=${step.tmuxSession}`];
-    const pty = spawnPty("tmux", args, { name: "xterm-256color", cols: 120, rows: 32, env: { ...process.env, TERM: "xterm-256color" } });
     if (control) deps.store.recordEvent(step.id, "operator_control", { via: "panel" });
-
-    pty.onData((data) => {
-      if (socket.readyState === socket.OPEN) socket.send(data);
-    });
-    pty.onExit(() => {
-      if (socket.readyState === socket.OPEN) socket.close(1000, "Session ended");
-    });
-    socket.on("message", (raw: Buffer) => {
-      let message: z.infer<typeof terminalMessage>;
-      try {
-        message = terminalMessage.parse(JSON.parse(raw.toString()));
-      } catch {
-        return;
-      }
-      if (message.type === "resize") pty.resize(message.cols, message.rows);
-      else if (control) pty.write(message.data);
-    });
-    // Closing the panel detaches the tmux client; the session keeps running.
-    socket.on("close", () => pty.kill());
+    attachTerminal(socket, deps.tmuxSocket, step.tmuxSession, control);
   });
+
+  /** The orchestrator's terminal: this is where the person talks to it, so control is the usual mode. */
+  app.get("/ws/orchestrator/:projectId", { websocket: true }, async (socket, request) => {
+    const params = z.object({ projectId: z.uuid() }).safeParse(request.params);
+    const query = z.object({ mode: z.enum(["view", "control"]).default("control") }).safeParse(request.query);
+    const session = params.success ? await deps.orchestratorSession(params.data.projectId) : null;
+    if (!params.success || !query.success || !session) {
+      socket.close(4404, "No orchestrator session for this project");
+      return;
+    }
+    const control = query.data.mode === "control";
+    if (control) deps.onOrchestratorControl(params.data.projectId);
+    attachTerminal(socket, deps.tmuxSocket, session, control);
+  });
+}
+
+/**
+ * Bridges a panel WebSocket to a tmux session through a pty. `view` attaches
+ * read-only and drops input; `control` forwards keystrokes.
+ */
+function attachTerminal(socket: WebSocket, tmuxSocket: string, session: string, control: boolean): void {
+  const args = ["-L", tmuxSocket, "attach", ...(control ? [] : ["-r"]), "-t", `=${session}`];
+  const pty = spawnPty("tmux", args, { name: "xterm-256color", cols: 120, rows: 32, env: { ...process.env, TERM: "xterm-256color" } });
+  pty.onData((data) => {
+    if (socket.readyState === socket.OPEN) socket.send(data);
+  });
+  pty.onExit(() => {
+    if (socket.readyState === socket.OPEN) socket.close(1000, "Session ended");
+  });
+  socket.on("message", (raw: Buffer) => {
+    let message: z.infer<typeof terminalMessage>;
+    try {
+      message = terminalMessage.parse(JSON.parse(raw.toString()));
+    } catch {
+      return;
+    }
+    if (message.type === "resize") pty.resize(message.cols, message.rows);
+    else if (control) pty.write(message.data);
+  });
+  // Closing the panel detaches the tmux client; the session keeps running.
+  socket.on("close", () => pty.kill());
 }

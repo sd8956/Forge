@@ -1,14 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { parseDependencies } from "./dependencies.js";
+import { parseDependencies, unfinishedDependencyRuns } from "./dependencies.js";
 
-describe("parseDependencies", () => {
-  it.each([
-    ["- Depends on: TASK-001", ["TASK-001"]],
-    ["- Depends on: TASK-001, TASK-014", ["TASK-001", "TASK-014"]],
-    ["- Depends on: none", []],
-    ["- Depends on: TASK-001 (merged first)", ["TASK-001"]],
-    ["# Title\n- Size: S\n", []],
-  ])("%j", (spec, deps) => {
-    expect(parseDependencies(spec)).toEqual(deps);
+describe("dependencies", () => {
+  it("reads the Depends on line", () => {
+    expect(parseDependencies("- Depends on: TASK-001, TASK-002 and TASK-001")).toEqual(["TASK-001", "TASK-002"]);
+    expect(parseDependencies("- Depends on: none")).toEqual([]);
+  });
+
+  it("counts a dependency as unfinished unless its latest Forge run is done", () => {
+    const run = (taskId: string, status: string, createdAt: number, projectPath = "/p") => ({ projectPath, taskId, status, createdAt });
+    const runs = [run("TASK-001", "done", 1), run("TASK-002", "cancelled", 1), run("TASK-003", "done", 1), run("TASK-003", "running", 2), run("TASK-004", "failed", 1), run("TASK-004", "done", 2), run("TASK-005", "running", 1, "/other")];
+    expect(unfinishedDependencyRuns(runs, "/p", ["TASK-001", "TASK-002", "TASK-003", "TASK-004", "TASK-005", "TASK-006"])).toEqual(["TASK-002", "TASK-003"]);
   });
 });

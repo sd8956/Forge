@@ -170,3 +170,46 @@ export const proposePlanShape = {
     .describe("Wave 1 first. A task may depend only on merged tasks or tasks in earlier waves"),
 };
 export const proposePlanInput = z.object(proposePlanShape);
+
+export interface PlanTaskView {
+  id: string;
+  taskId: string;
+  title: string;
+  wave: number;
+  modules: string[];
+  priority: number;
+  dependsOn: string[];
+  state: "planned" | "queued" | "launched" | "cancelled";
+  waitReason: string | null;
+  runId: string | null;
+  runStatus: RunStatus | null;
+}
+
+export interface PlanView {
+  id: string;
+  projectPath: string;
+  status: "proposed" | "approved" | "rejected" | "done" | "cancelled";
+  rationale: string;
+  proposedBy: string;
+  createdAt: number;
+  decidedAt: number | null;
+  tasks: PlanTaskView[];
+}
+
+export interface UsageWindowView {
+  percent: number;
+  resetsAt: number;
+}
+
+export interface QueueView {
+  paused: { reason: string; source: "manual" | "rate_limit"; since: number; until: number | null } | null;
+  usage: { fiveHour: UsageWindowView | null; sevenDay: UsageWindowView | null; reportedAt: number } | null;
+  usagePausePercent: number;
+  maxConcurrency: number;
+  /** Runs holding a session slot (queued, running, needs_human). */
+  active: { runId: string; taskId: string; projectPath: string; status: RunStatus; currentStep: string }[];
+  queued: (PlanTaskView & { planId: string; projectPath: string })[];
+}
+
+export const queuePauseRequest = z.object({ reason: z.string().trim().min(1).max(200).default("Paused by a person") });
+export const orchestratorStartRequest = z.object({ prompt: z.string().trim().max(4000).optional() });

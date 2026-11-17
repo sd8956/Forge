@@ -34,6 +34,15 @@ describe("demo-project fixture contract", () => {
     expect(fixer?.settings.permissions.allow.some((r) => r.startsWith("Bash(gh api -X POST repos/:"))).toBe(false);
   });
 
+  it("gives the orchestrator read-only tools and the factory MCP server, never Bash or writes", () => {
+    const agent = readFileSync(join(FIXTURE, ".claude", "agents", "forge-orchestrator.md"), "utf8");
+    const frontmatter = parse(/^---\n([\s\S]*?)\n---/.exec(agent)?.[1] ?? "") as { tools: string };
+    expect(frontmatter.tools.split(",").map((t) => t.trim())).toEqual(["Read", "Grep", "Glob", "mcp__factory"]);
+    const settings = JSON.parse(readFileSync(join(FIXTURE, ".factory", "orchestrator.settings.json"), "utf8")) as Settings;
+    expect(settings.permissions.allow).toEqual(["mcp__factory"]);
+    expect(settings.permissions.deny).toEqual(expect.arrayContaining(["Bash", "Write", "Edit", "MultiEdit", "NotebookEdit", "WebFetch", "Agent", "Read(/{{FORGE_HOME}}/**)"]));
+  });
+
   it("lets the pr step update an existing PR without a prompt", () => {
     const pr = steps.find((s) => s.step.id === "pr");
     expect(pr?.settings.permissions.allow).toEqual(expect.arrayContaining(["Bash(gh pr create:*)", "Bash(gh pr edit:*)"]));

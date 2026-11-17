@@ -50,6 +50,19 @@
   usage threshold (`FORGE_USAGE_PAUSE_PERCENT`, default 90) only stops new tasks and review rounds. A person's pause
   is never replaced by an automatic one.
 
+- **The orchestrator session.** One Claude Code session per project (`forge-orch-<id>` on Forge's tmux socket), in
+  the project's own checkout, with the `forge-orchestrator` agent, `--permission-mode default` and settings from
+  `.factory/orchestrator.settings.json`. Its tools are Read, Grep, Glob and the `factory` MCP server at
+  `/mcp/orchestrator/<projectId>`; Bash, writes, web access and subagents are denied three times (agent `tools`,
+  settings `deny` and `--disallowedTools`), and reads of Forge's home (rendered settings carry the token) are denied.
+  The person talks to it through the panel terminal in control mode.
+- **Its tools.** `list_backlog` (tasks with status), `propose_plan` (validated; stored as `proposed`),
+  `launch_pipeline` (refuses a plan that is not approved, otherwise wakes the scheduler), `get_status` and `cancel`
+  (a queued task or an open run, only when the person asks). Approving or rejecting a plan exists only as an HTTP
+  route for the panel; approval queues the tasks, so the scheduler starts them without waiting for the orchestrator.
+- **A dependency's run decides first.** When Forge ran a dependency, it counts as merged only if its latest run is
+  `done`; git decides only for tasks Forge never ran (a cancelled or failed run can leave an empty branch).
+
 ## Consequences
 
 - `task` from the definition's data model is not created; its `depends_on` and status live in the backlog files,

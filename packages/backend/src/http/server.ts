@@ -1,3 +1,5 @@
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import type { Duplex } from "node:stream";
 import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
@@ -5,6 +7,10 @@ import { activityHookInput, notificationHookInput, preToolUseHookInput, sessionE
 import { z } from "zod";
 import { TOKEN_HEADER, tokenMatches } from "../auth.js";
 import type { SchedulerService } from "../runs/scheduler-service.js";
+import type { PlanStore } from "../db/plan-store.js";
+import type { OrchestratorService } from "../orchestrator/orchestrator-service.js";
+import type { ForgeConfig } from "../config.js";
+import { registerOrchestratorRoutes } from "./orchestrator-routes.js";
 import type { PrThreadStore } from "../db/pr-thread-store.js";
 import type { ProjectStore } from "../db/project-store.js";
 import { DuplicateRunError, toRunView, type RunStore } from "../db/run-store.js";
@@ -39,6 +45,9 @@ interface ServerDeps {
   archiveDir: (runId: string) => string;
   threads: PrThreadStore;
   scheduler: SchedulerService;
+  plans: PlanStore;
+  orchestrator: OrchestratorService;
+  config: ForgeConfig;
   bus: EventBus;
   tmuxSocket: string;
   logger?: boolean;
@@ -51,6 +60,14 @@ function isPublic(path: string): boolean {
 
 const stepIdParams = z.object({ stepId: z.uuid() });
 const runIdParams = z.object({ runId: z.uuid() });
+
+async function gitStdout(args: string[]): Promise<string> {
+  try {
+    return (await promisify(execFile)("git", args, { encoding: "utf8" })).stdout.trim();
+  } catch {
+    return "";
+  }
+}
 
 function badRequest(reply: FastifyReply, error: z.ZodError) {
   return reply.code(400).send({ error: "invalid_request", issues: error.issues });
@@ -91,7 +108,27 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     if ((changesState || websocket) && !isLocalOrigin(request.headers.origin, deps.port())) return refuse(403, "forbidden_origin");
   });
 
-  await registerWsRoutes(app, { bus: deps.bus, store: deps.store, tmuxSocket: deps.tmuxSocket });
+  await registerWsRoutes(app, {
+    bus: deps.bus,
+    store: deps.store,
+    tmuxSocket: deps.tmuxSocket,
+    orchestratorSession: async (projectId) => {
+      const project = deps.projects.get(projectId);
+      return project ? ((await deps.orchestrator.status(project))?.tmuxSession ?? null) : null;
+    },
+    onOrchestratorControl: (projectId) => deps.plans.recordEvent("plan", projectId, "orchestrator_control", { via: "panel" }),
+  });
+
+  registerOrchestratorRoutes(app, {
+    config: deps.config,
+    plans: deps.plans,
+    runs: deps.runs,
+    runService: deps.runService,
+    scheduler: deps.scheduler,
+    projects: deps.projects,
+    orchestrator: deps.orchestrator,
+    baseBranch: async (projectPath) => (await gitStdout(["-C", projectPath, "rev-parse", "--abbrev-ref", "HEAD"])) || "main",
+  });
 
   await registerPanelRoutes(app, {
     token: deps.token,
