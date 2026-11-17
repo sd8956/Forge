@@ -6,7 +6,10 @@ import { baseUrl, type ForgeConfig } from "./config.js";
 import { openDatabase } from "./db/client.js";
 import { RunStore } from "./db/run-store.js";
 import { StepStore } from "./db/step-store.js";
+import { LoginCodes } from "./http/panel-auth.js";
+import { loginUrl } from "./http/panel-routes.js";
 import { buildServer } from "./http/server.js";
+import { ProjectStore } from "./db/project-store.js";
 import { EngramAdapter, type MemoryAdapter } from "./memory/memory-adapter.js";
 import { Tmux } from "./runner/tmux.js";
 import { RunService } from "./runs/run-service.js";
@@ -20,6 +23,9 @@ export interface Backend {
   service: StepService;
   runService: RunService;
   reconciled: { resumed: string[]; orphaned: string[] };
+  projects: ProjectStore;
+  /** A fresh one-time link that logs a browser into the panel. */
+  loginLink: () => string;
   /** Stops the HTTP server and timers. tmux sessions are left running on purpose. */
   close: () => Promise<void>;
 }
@@ -47,14 +53,31 @@ export async function startBackend(config: ForgeConfig, opts: { logger?: boolean
   const service = new StepService({ config, store, tmux, token, log, url: () => url });
   const runService = new RunService({ config, runs, steps: service, log });
   const memory = opts.memory ?? new EngramAdapter(config.engramUrl);
+  const projects = new ProjectStore(db);
+  const codes = new LoginCodes();
+  let port = config.port;
 
   // Steps first (orphans are marked but runs do not react yet), then listen, then advance runs,
   // so a relaunched session never starts before its hooks and MCP server can answer.
   const reconciled = await service.reconcile();
-  const app = buildServer({ token, store, service, runs, runService, memory, memoryProject: memoryProjectFor, logger: opts.logger ?? false });
+  const app = await buildServer({
+    token,
+    store,
+    service,
+    runs,
+    runService,
+    memory,
+    memoryProject: memoryProjectFor,
+    projects,
+    codes,
+    port: () => port,
+    baseUrl: () => url,
+    webDist: config.webDist,
+    logger: opts.logger ?? false,
+  });
   await app.listen({ host: config.host, port: config.port });
   const address = app.server.address();
-  const port = typeof address === "object" && address ? address.port : config.port;
+  port = typeof address === "object" && address ? address.port : config.port;
   url = baseUrl({ host: config.host, port });
   await runService.reconcile();
   service.startSweeper();
@@ -67,6 +90,8 @@ export async function startBackend(config: ForgeConfig, opts: { logger?: boolean
     service,
     runService,
     reconciled,
+    projects,
+    loginLink: () => loginUrl({ baseUrl: () => url, codes }),
     close: async () => {
       await app.close();
       await service.shutdown();

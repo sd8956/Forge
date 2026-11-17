@@ -61,6 +61,7 @@ export function testConfig(root: string, overrides: Partial<ForgeConfig> = {}): 
     checkTrust: false,
     checkTimeoutMs: 60_000,
     engramUrl: "http://127.0.0.1:9",
+    webDist: join(root, "no-web"),
     ...overrides,
   };
 }

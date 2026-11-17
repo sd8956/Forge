@@ -3,12 +3,15 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { activityHookInput, notificationHookInput, preToolUseHookInput, sessionEndHookInput, startRunRequest, stopHookInput } from "@forge/shared";
 import { z } from "zod";
 import { TOKEN_HEADER, tokenMatches } from "../auth.js";
+import type { ProjectStore } from "../db/project-store.js";
 import { DuplicateRunError, toRunView, type RunStore } from "../db/run-store.js";
 import { toStepView, type StepStore } from "../db/step-store.js";
 import { createFactoryMcpServer } from "../mcp/factory-server.js";
 import type { MemoryAdapter } from "../memory/memory-adapter.js";
 import { RunRequestError, type RunService } from "../runs/run-service.js";
 import { StepRequestError, type StepService } from "../steps/step-service.js";
+import { isLocalHost, isLocalOrigin, type LoginCodes, readCookie, SESSION_COOKIE, verifySessionCookie } from "./panel-auth.js";
+import { registerPanelRoutes } from "./panel-routes.js";
 
 interface ServerDeps {
   token: string;
@@ -19,7 +22,18 @@ interface ServerDeps {
   memory: MemoryAdapter;
   /** Engram project name for a project path (from project.yaml). */
   memoryProject: (projectPath: string) => string;
+  projects: ProjectStore;
+  codes: LoginCodes;
+  /** Port the backend listens on, once known (the Host and Origin checks need it). */
+  port: () => number;
+  baseUrl: () => string;
+  webDist: string;
   logger?: boolean;
+}
+
+/** Reachable without credentials: the panel's static shell and the login link. */
+function isPublic(path: string): boolean {
+  return path === "/health" || path === "/login" || path === "/" || path.startsWith("/assets/") || path === "/favicon.svg";
 }
 
 const stepIdParams = z.object({ stepId: z.uuid() });
@@ -29,17 +43,36 @@ function badRequest(reply: FastifyReply, error: z.ZodError) {
   return reply.code(400).send({ error: "invalid_request", issues: error.issues });
 }
 
-export function buildServer(deps: ServerDeps): FastifyInstance {
+export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
   const app = Fastify({ logger: deps.logger ?? false, bodyLimit: 1024 * 1024 });
 
   app.get("/health", () => ({ ok: true }));
 
-  // Everything except /health needs the local token: the backend can launch shells.
+  // The backend can launch shells: every request must come to a local Host name, and everything but
+  // the public shell needs the local token (CLI, hooks, MCP) or the panel's session cookie. Cookie
+  // requests that change state, and WebSockets, must also come from the panel's own Origin.
   app.addHook("onRequest", async (request, reply) => {
-    if (request.url === "/health") return;
-    if (!tokenMatches(deps.token, request.headers[TOKEN_HEADER])) {
-      await reply.code(401).send({ error: "unauthorized" });
+    if (!isLocalHost(request.headers.host, deps.port())) return reply.code(403).send({ error: "forbidden_host" });
+    const path = request.url.split("?")[0] ?? "";
+    if (isPublic(path)) return;
+    if (tokenMatches(deps.token, request.headers[TOKEN_HEADER])) return;
+    if (!verifySessionCookie(deps.token, readCookie(request.headers.cookie, SESSION_COOKIE))) {
+      return reply.code(401).send({ error: "unauthorized" });
     }
+    const changesState = request.method !== "GET" && request.method !== "HEAD";
+    const websocket = request.headers.upgrade?.toLowerCase() === "websocket";
+    if ((changesState || websocket) && !isLocalOrigin(request.headers.origin, deps.port())) {
+      return reply.code(403).send({ error: "forbidden_origin" });
+    }
+  });
+
+  await registerPanelRoutes(app, {
+    token: deps.token,
+    baseUrl: deps.baseUrl,
+    projects: deps.projects,
+    runs: deps.runs,
+    codes: deps.codes,
+    webDist: deps.webDist,
   });
 
   // ------------------------------------------------------------- hooks
@@ -109,7 +142,9 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
     const parsed = startRunRequest.safeParse(request.body);
     if (!parsed.success) return badRequest(reply, parsed.error);
     try {
-      return await reply.code(201).send(toRunView(await deps.runService.start(parsed.data)));
+      const run = await deps.runService.start(parsed.data);
+      deps.projects.upsert(run.projectPath);
+      return await reply.code(201).send(toRunView(run));
     } catch (error) {
       if (error instanceof DuplicateRunError) return reply.code(409).send({ error: "duplicate_run", message: error.message, runId: error.runId });
       if (error instanceof RunRequestError || error instanceof StepRequestError) return reply.code(400).send({ error: "invalid_run", message: error.message });

@@ -47,6 +47,19 @@ export const steps = sqliteTable(
   ],
 );
 
+/** A target repository registered in Forge (one per repo). */
+export const projects = sqliteTable("project", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  repoPath: text("repo_path").notNull().unique(),
+  remote: text("remote"),
+  defaultBranch: text("default_branch").notNull(),
+  /** Parsed `.factory/project.yaml`, refreshed on every registration. */
+  config: text("config", { mode: "json" }).$type<Record<string, unknown>>().notNull(),
+  createdAt: integer("created_at").notNull(),
+  updatedAt: integer("updated_at").notNull(),
+});
+
 /** One pipeline run: a task going through every step. */
 export const runs = sqliteTable(
   "run",
@@ -98,4 +111,5 @@ export type StepRow = typeof steps.$inferSelect;
 export type NewStepRow = typeof steps.$inferInsert;
 export type EventRow = typeof events.$inferSelect;
 export type RunRow = typeof runs.$inferSelect;
+export type ProjectRow = typeof projects.$inferSelect;
 export type NewRunRow = typeof runs.$inferInsert;
