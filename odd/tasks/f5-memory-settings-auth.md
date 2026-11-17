@@ -18,9 +18,10 @@ Objective: the sidebar's Memory and Settings panels from the design, an API key 
 | T2 | S2 | inline | done | d6dd3d1 |
 | T3 | S3 | inline | done | d6dd3d1 |
 | T4 | S4 | inline | done | 34d636b |
-| T5 | S5 | inline | partial | Memory and Settings checked against real data; API key and Maestro real runs need the person |
+| T5 | S5 | inline | done | closed with tests for the API key and Maestro (person's decision); docs/runs/f5.md |
 
 ## Log
 
 - L1 (2026-11-17) User: "1. ¿no tiene sentido que tenga en cuenta todos los comentarios sin importar el usuario? 2. Tiene sentido ... 3. Por ahora esto no lo hagamo 4. De acuerdo 5. Hagamos todo" → points 1, 2, 4 done in PR #8; point 5 is this feature. L2 User: "apruebo el plan pero primero terminemos con mi duda anterior ¿que pasa si apago el equipo en medio de una sesión en curso?" → answered (reconcile relaunches the same step; no auto-start on boot).
 - L3 T1-T4 done inline. Verified in docs: apiKeyHelper works from --settings and ranks above the subscription login. Memory checked against the real Engram (demo-project 19 memories, daily-tasks 9, each linked to its run); Settings shows the effective limits. 382 tests + 13 Playwright green (fake Engram added to the e2e). Pending: real API key run (person's key, costs credits) and real Maestro run (global installs).
+- L4 User: "esta parte de la interfaz se ve mal" → project settings as a two-column list with a commands table (43e3eb9). User: "cerremos la fase 5 con los tests" → API key and Maestro real runs not done; report in docs/runs/f5.md.
