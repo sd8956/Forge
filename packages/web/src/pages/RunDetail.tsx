@@ -130,9 +130,11 @@ export function RunDetail({ id, now }: { id: string; now: number }) {
   if (!run) return <p className="muted">{message ?? "Loading…"}</p>;
   const status = runStatus(run.status);
   const live: StepView | undefined = [...run.steps].reverse().find((s) => LIVE.has(s.status));
-  const act = (action: "resume" | "cancel") => {
-    void api[action](run.id).then((r) => setMessage(r.message), (e: unknown) => setMessage(e instanceof Error ? e.message : String(e)));
+  const act = (action: "resume" | "cancel", opts: { mergeBase?: boolean } = {}) => {
+    const call = action === "resume" ? api.resume(run.id, opts) : api.cancel(run.id);
+    void call.then((r) => setMessage(r.message), (e: unknown) => setMessage(e instanceof Error ? e.message : String(e)));
   };
+  const missingAgent = run.status === "needs_human" && run.exitReason?.startsWith("agent_missing:") ? run.events.filter((e) => e.type === "agent_missing").at(-1) : undefined;
   const findings = evidence?.security?.findings ?? {};
 
   return (
@@ -164,6 +166,13 @@ export function RunDetail({ id, now }: { id: string; now: number }) {
         </div>
       </div>
       {message ? <p role="status" className="muted">{message}</p> : null}
+      {missingAgent ? (
+        <div className="card panel" role="alert" style={{ marginBottom: 16, borderColor: "var(--st-needs_attention-fg)" }}>
+          <strong>The task branch has no {typeof missingAgent.payload.agent === "string" ? missingAgent.payload.agent : "step"} agent.</strong>
+          <p className="muted small">It was created before the agent existed. {typeof missingAgent.payload.fix === "string" ? missingAgent.payload.fix : ""}</p>
+          <button type="button" className="btn primary" onClick={() => act("resume", { mergeBase: true })}>Merge {run.baseBranch} and resume</button>
+        </div>
+      ) : null}
 
       <div className="detail">
         <div className="card panel"><h2>Pipeline</h2><Timeline run={run} now={now} /></div>

@@ -9,7 +9,7 @@ const USAGE = `Usage:
   pnpm forge serve
   pnpm forge run-task --project <path> --task <TASK-001> [--no-wait]
   pnpm forge status [<run-id>]
-  pnpm forge resume <run-id> [--no-wait]
+  pnpm forge resume <run-id> [--merge-base] [--no-wait]   --merge-base merges the base branch into the task branch first
   pnpm forge cancel <run-id>
   pnpm forge login                 prints a one-time link that opens the panel
 
@@ -142,9 +142,13 @@ async function main(): Promise<number> {
       return 0;
     }
     case "resume": {
-      const { values, positionals } = parseArgs({ args: rest, allowPositionals: true, options: { "no-wait": { type: "boolean", default: false } } });
+      const { values, positionals } = parseArgs({
+        args: rest,
+        allowPositionals: true,
+        options: { "no-wait": { type: "boolean", default: false }, "merge-base": { type: "boolean", default: false } },
+      });
       if (!positionals[0]) throw new Error(`Missing run id.\n${USAGE}`);
-      const result = await api<{ message: string }>(`/runs/${positionals[0]}/resume`, { method: "POST", body: "{}" });
+      const result = await api<{ message: string }>(`/runs/${positionals[0]}/resume`, { method: "POST", body: JSON.stringify({ mergeBase: values["merge-base"] }) });
       console.log(result.message);
       return values["no-wait"] ? 0 : waitForRun(positionals[0]);
     }
