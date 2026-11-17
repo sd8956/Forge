@@ -12,6 +12,7 @@ interface Ctx {
   backend: Backend;
   api: Api;
   tmux: Tmux;
+  config: ReturnType<typeof testConfig>;
 }
 
 const cleanups: (() => Promise<void> | void)[] = [];
@@ -30,7 +31,7 @@ async function setup(behaviour: string, overrides: Parameters<typeof testConfig>
   cleanups.push(() => rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
   cleanups.push(() => disposeTmux(tmux, config.tmuxSocket));
   cleanups.push(() => backend.close());
-  return { root, project, backend, api: new Api(backend.url, backend.token), tmux };
+  return { root, project, backend, api: new Api(backend.url, backend.token), tmux, config };
 }
 
 async function startPlan(ctx: Ctx): Promise<RunDetail> {
@@ -81,7 +82,8 @@ describe("step lifecycle with a fake claude in tmux", () => {
       agent: "forge-planner",
       prompt: "Read .factory/runs/TASK-001/plan/1/input.md and run the step.",
       settingSources: "project",
-      permissionMode: "acceptEdits",
+      // Pipeline steps run in auto mode unless the project opts out (ADR 0010).
+      permissionMode: "auto",
       model: "opus",
     });
     // The Stop hook after the report lets the session stop (no decision body).
@@ -186,6 +188,31 @@ describe("step lifecycle with a fake claude in tmux", () => {
     expect(run.steps[0]).toMatchObject({ status: "failed", exitReason: "launch_failed" });
     expect(run.events.some((e) => e.type === "launch_error" && String(e.payload.error).includes("bypassPermissions"))).toBe(true);
     expect(await ctx.tmux.listSessions()).toEqual([]);
+  });
+
+  it("runs a step in the agent's mode with auto locked when the project opts out, and never allows bypass", async () => {
+    const ctx = await setup("done");
+    const yaml = join(ctx.project, ".factory", "project.yaml");
+    writeFileSync(yaml, readFileSync(yaml, "utf8").replace("permission_mode: auto", "permission_mode: agent"));
+    execFileSync("git", ["-C", ctx.project, "-c", "user.name=t", "-c", "user.email=t@example.invalid", "commit", "-qam", "manual"]);
+    const run = await startPlan(ctx);
+    const done = await ctx.api.waitForRun(run.id, "waiting_review");
+    expect(readTrace(ctx.root).find((t) => t.type === "started")).toMatchObject({ permissionMode: "acceptEdits" });
+    const settings = JSON.parse(readFileSync(join(ctx.config.home, "steps", done.steps[0]!.id, "settings.json"), "utf8")) as { permissions: Record<string, unknown> };
+    expect(settings.permissions).toMatchObject({ disableAutoMode: "disable", disableBypassPermissionsMode: "disable" });
+    const launch = (await ctx.api.step(done.steps[0]!.id)).events.find((e) => e.type === "transition" && e.payload.event === "launch");
+    expect(launch?.payload).toMatchObject({ permissionMode: "acceptEdits" });
+  });
+
+  it("records auto mode at launch and still locks bypass", async () => {
+    const ctx = await setup("done");
+    const run = await startPlan(ctx);
+    const done = await ctx.api.waitForRun(run.id, "waiting_review");
+    const settings = JSON.parse(readFileSync(join(ctx.config.home, "steps", done.steps[0]!.id, "settings.json"), "utf8")) as { permissions: Record<string, unknown> };
+    expect(settings.permissions.disableBypassPermissionsMode).toBe("disable");
+    expect(settings.permissions.disableAutoMode).toBeUndefined();
+    const launch = (await ctx.api.step(done.steps[0]!.id)).events.find((e) => e.type === "transition" && e.payload.event === "launch");
+    expect(launch?.payload).toMatchObject({ permissionMode: "auto" });
   });
 
   it("keeps the rendered token out of the worktree", async () => {

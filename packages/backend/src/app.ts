@@ -20,6 +20,9 @@ import { archiveDirFor, RunService } from "./runs/run-service.js";
 import { SchedulerService } from "./runs/scheduler-service.js";
 import { PlanStore } from "./db/plan-store.js";
 import { OrchestratorService } from "./orchestrator/orchestrator-service.js";
+import { DefinitionService } from "./definition/definition-service.js";
+import { DefinitionStore } from "./db/definition-store.js";
+import { routeStepPolicy } from "./steps/policy-router.js";
 import { StepService } from "./steps/step-service.js";
 
 export interface Backend {
@@ -38,6 +41,7 @@ export interface Backend {
   plans: PlanStore;
   scheduler: SchedulerService;
   orchestrator: OrchestratorService;
+  definition: DefinitionService;
   /** Stops the HTTP server and timers. tmux sessions are left running on purpose. */
   close: () => Promise<void>;
 }
@@ -83,12 +87,16 @@ export async function startBackend(config: ForgeConfig, opts: { logger?: boolean
   const queue = new SchedulerService({ config, plans, runs, threads, runService, log });
   schedulerRef.current = queue;
   const orchestrator = new OrchestratorService({ config, tmux, plans, token, url: () => url });
+  const definitionStore = new DefinitionStore(db, Date.now, (event) => bus.publish(event));
+  const github = opts.github ?? new GhCliClient(config.ghBin);
+  const definition = new DefinitionService({ config, store: definitionStore, steps: service, stepStore: store, projects, github, log });
+  service.policy = routeStepPolicy(runService, definition);
   service.onRateLimit = (step) => queue.onRateLimit(step.id);
   const watcher = new PrWatcher({
     runs,
     threads,
     projects,
-    github: opts.github ?? new GhCliClient(config.ghBin),
+    github,
     runService,
     onFeedback: () => queue.tick(),
     intervalMs: config.prPollIntervalMs,
@@ -118,6 +126,7 @@ export async function startBackend(config: ForgeConfig, opts: { logger?: boolean
     scheduler: queue,
     plans,
     orchestrator,
+    definition,
     config,
     bus,
     tmuxSocket: config.tmuxSocket,
@@ -128,6 +137,8 @@ export async function startBackend(config: ForgeConfig, opts: { logger?: boolean
   port = typeof address === "object" && address ? address.port : config.port;
   url = baseUrl({ host: config.host, port });
   await runService.reconcile();
+  definition.reconcile();
+  definition.startWatching(config.prPollIntervalMs);
   service.startSweeper();
   watcher.start();
   queue.start();
@@ -151,9 +162,11 @@ export async function startBackend(config: ForgeConfig, opts: { logger?: boolean
     plans,
     scheduler: queue,
     orchestrator,
+    definition,
     close: async () => {
       unsubscribe();
       await queue.stop();
+      await definition.stopWatching();
       await watcher.stop();
       await app.close();
       await service.shutdown();

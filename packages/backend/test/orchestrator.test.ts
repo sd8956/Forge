@@ -1,8 +1,10 @@
+import { execFileSync } from "node:child_process";
 import { chmodSync, existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { afterEach, describe, expect, it } from "vitest";
+import WebSocket from "ws";
 import { startBackend, type Backend } from "../src/app.js";
 import type { ForgeConfig } from "../src/config.js";
 import { Tmux } from "../src/runner/tmux.js";
@@ -134,6 +136,19 @@ describe("orchestrator", () => {
     expect((JSON.parse(settings) as { permissions: { deny: string[] } }).permissions.deny).toContain(`Read(/${ctx.config.home}/**)`);
     const mcp = JSON.parse(readFileSync(argv[argv.indexOf("--mcp-config") + 1]!, "utf8")) as { mcpServers: { factory: { url: string } } };
     expect(mcp.mcpServers.factory.url).toBe(`${ctx.backend.url}/mcp/orchestrator/${ctx.projectId}`);
+
+    // Taking control is recorded once per orchestrator session, not on every panel reconnect.
+    for (let i = 0; i < 3; i++) {
+      const ws = new WebSocket(`${ctx.backend.url.replace("http", "ws")}/ws/orchestrator/${ctx.projectId}?mode=control`, { headers: { "x-forge-token": ctx.backend.token } });
+      await new Promise((resolve, reject) => {
+        ws.once("open", resolve);
+        ws.once("error", reject);
+      });
+      ws.close();
+    }
+    const controls = () =>
+      Number(execFileSync("sqlite3", [join(ctx.config.home, "forge.db"), "select count(*) from event where type = 'orchestrator_control'"], { encoding: "utf8" }).trim());
+    expect(controls()).toBe(1);
 
     const status = (await ctx.api.request("GET", `/projects/${ctx.projectId}/orchestrator`)).body as { session: { tmuxSession: string } | null };
     expect(status.session?.tmuxSession).toMatch(/^forge-orch-/);

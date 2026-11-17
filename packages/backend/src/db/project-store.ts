@@ -1,5 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import { eq } from "drizzle-orm";
 import { loadProjectConfig } from "../projects/project-config.js";
 import type { Db } from "./client.js";
@@ -19,9 +21,16 @@ export class ProjectStore {
     private readonly now: () => number = Date.now,
   ) {}
 
-  /** Registers a repository, or refreshes its config, remote and default branch. */
-  upsert(repoPath: string): ProjectRow {
-    const config = loadProjectConfig(repoPath);
+  /**
+   * Registers a repository, or refreshes its config, remote and default branch.
+   * A project being defined has no project.yaml on its base branch yet: with
+   * `fallbackName` it is registered under that name until the definition merges.
+   */
+  upsert(repoPath: string, opts: { fallbackName?: string } = {}): ProjectRow {
+    const config =
+      opts.fallbackName && !existsSync(join(repoPath, ".factory", "project.yaml"))
+        ? { name: opts.fallbackName, platforms: [], commands: {}, policies: {}, review: { allowed_authors: [] } }
+        : loadProjectConfig(repoPath);
     const values = {
       name: config.name,
       remote: git(repoPath, ["remote", "get-url", "origin"]),

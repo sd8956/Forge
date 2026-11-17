@@ -16,6 +16,7 @@ export type GuardRule =
   | "in_place_edit"
   | "unquoted_glob"
   | "env_prefix"
+  | "outside_factory"
   | "outside_worktree";
 
 export type GuardResult = { allow: true } | { allow: false; rule: GuardRule; reason: string };
@@ -85,7 +86,13 @@ export function guardBash(command: string, worktree: string): GuardResult {
 /** Tools whose path argument must stay inside the worktree. */
 const PATH_FIELDS: Record<string, string> = { Read: "file_path", Write: "file_path", Edit: "file_path", MultiEdit: "file_path", NotebookEdit: "notebook_path", Glob: "path", Grep: "path" };
 
-export function guardTool(toolName: string, toolInput: Record<string, unknown>, worktree: string): GuardResult {
+const WRITE_TOOLS = new Set(["Write", "Edit", "MultiEdit", "NotebookEdit"]);
+
+/**
+ * `writeRoot` narrows where write tools may write (a definition stage writes
+ * only `.factory/`, and never the step settings Forge copied there).
+ */
+export function guardTool(toolName: string, toolInput: Record<string, unknown>, worktree: string, writeRoot?: string): GuardResult {
   if (toolName === "Bash") {
     const command = toolInput.command;
     return typeof command === "string" ? guardBash(command, worktree) : { allow: true };
@@ -93,5 +100,12 @@ export function guardTool(toolName: string, toolInput: Record<string, unknown>, 
   const field = PATH_FIELDS[toolName];
   const path = field ? toolInput[field] : undefined;
   if (typeof path === "string" && isAbsolute(path) && !insideWorktree(path, worktree)) return outside(path, worktree);
+  if (writeRoot && WRITE_TOOLS.has(toolName) && typeof path === "string") {
+    const full = resolve(worktree, path);
+    const steps = resolve(writeRoot, "steps");
+    if (!insideWorktree(full, writeRoot) || insideWorktree(full, steps)) {
+      return deny("outside_factory", `A definition stage writes only inside ${writeRoot} (and never .factory/steps/). Forge owns the rest of the repository; do not write ${path}.`);
+    }
+  }
   return { allow: true };
 }

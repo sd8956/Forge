@@ -12,6 +12,8 @@ commands:
   up: make up
   e2e: make e2e
 policies:
+  # auto (default): Claude Code's classifier answers prompts, within the deny rules and the guard. agent: the agent's mode.
+  permission_mode: auto
   step_timeout_minutes: 45
   max_stop_blocks: 3
 review:

@@ -68,6 +68,7 @@ export function testConfig(root: string, overrides: Partial<ForgeConfig> = {}): 
     maxConcurrency: 3,
     usagePausePercent: 90,
     schedulerIntervalMs: 200,
+    templateDir: FIXTURE,
     ...overrides,
   };
 }

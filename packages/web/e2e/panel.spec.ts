@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
@@ -127,10 +128,14 @@ test("approves a proposed plan in the panel, shows why it waits, and pauses and 
   await page.getByRole("button", { name: "Pause queue" }).click();
   await expect(page.getByRole("status").filter({ hasText: "Queue paused." })).toBeVisible();
 
-  const proposed = await orchestratorTool(projectId, "propose_plan", { rationale: "Health endpoint on its own", waves: [{ tasks: [{ id: "TASK-003", modules: ["src/server"] }] }] });
+  // A long module list, like real plans have, must not squeeze the title.
+  const modules = ["package.json", "pnpm-lock.yaml", "tsconfig.json", "tsconfig.server.json", "eslint.config.js", "playwright.config.ts", "vitest.config.ts", "Makefile", "src/server/platform/app.ts", "src/server/main.ts", "src/web", "test/e2e", "test/unit/support"];
+  const proposed = await orchestratorTool(projectId, "propose_plan", { rationale: "Health endpoint on its own", waves: [{ tasks: [{ id: "TASK-003", modules: ["src/server", ...modules] }] }] });
   expect(proposed.isError).toBeFalsy();
   const plan = page.getByRole("region", { name: "Proposed plan" });
   await expect(plan.getByTestId("plan-task-TASK-003")).toContainText("src/server");
+  const title = await plan.getByTestId("plan-task-TASK-003").getByText("Health endpoint").boundingBox();
+  expect(title?.width ?? 0).toBeGreaterThan(150);
   await expect(plan.getByText("Wave 1")).toBeVisible();
   await page.screenshot({ path: join(shots, "plan.png"), fullPage: true });
   await plan.getByRole("button", { name: "Approve plan" }).click();
@@ -173,4 +178,78 @@ test("opens the orchestrator from Launch tasks and types into its session", asyn
   await page.screenshot({ path: join(shots, "orchestrator.png"), fullPage: true });
   await pane.getByRole("button", { name: "Stop" }).click();
   await expect(pane).toBeHidden();
+});
+
+test("defines a new project stage by stage: changes, an isolated prototype approved screen by screen, and the definition PR", async ({ page }) => {
+  test.setTimeout(120_000);
+  await login(page);
+  await page.getByRole("link", { name: "Definition" }).click();
+  await page.getByLabel("Repository path").fill(state.newApp);
+  await page.getByLabel("The idea, in your words").fill("A link shortener for a small team: paste a URL, get a short link.");
+  await page.getByRole("button", { name: "Start the definition" }).click();
+  await expect(page.getByRole("heading", { name: "Definition" })).toBeVisible();
+
+  const gate = page.getByRole("region", { name: "Gate" });
+  const approve = async (stage: string) => {
+    await expect(page.getByTestId(`stage-${stage}`)).toContainText("In review", { timeout: 20_000 });
+    await gate.getByRole("button", { name: "Approve and continue" }).click();
+    await expect(page.getByTestId(`stage-${stage}`)).not.toContainText("In review");
+  };
+
+  // Intake: ask for a change, and the relaunched session takes it into account.
+  await expect(page.getByTestId("stage-intake")).toContainText("In review", { timeout: 20_000 });
+  await expect(page.getByTestId("definition-document")).toContainText("A link shortener for a small team");
+  await gate.getByRole("button", { name: "Request changes" }).click();
+  await gate.getByLabel("What should change").fill("Say it is web only");
+  await gate.getByRole("button", { name: "Send the changes" }).click();
+  await expect(page.getByTestId("definition-document")).toContainText("Changed after review: Say it is web only", { timeout: 20_000 });
+  await approve("intake");
+  await expect(page.getByTestId("stage-intake")).toContainText("shortener · web");
+  await expect(page.getByLabel(".factory files")).toContainText("✓ intake.md");
+
+  for (const stage of ["requirements", "architecture", "test_strategy"]) await approve(stage);
+
+  await expect(page.getByTestId("stage-design")).toContainText("In review", { timeout: 20_000 });
+  await page.getByRole("tab", { name: "Prototype" }).click();
+  const frame = page.frameLocator('iframe[title="Prototype index.html"]');
+  await expect(frame.getByRole("heading", { name: "Shorten a link" })).toBeVisible();
+  const iframe = page.locator('iframe[title="Prototype index.html"]');
+  await expect(iframe).toHaveAttribute("sandbox", "allow-scripts");
+  // Its scripts run, but in an opaque origin: it cannot reach the panel.
+  const inner = page.frames().find((f) => f.url().includes("/prototype/index.html"));
+  if (!inner) throw new Error("prototype frame not found");
+  // Expressions as strings: they run inside the frame, and the e2e tsconfig has no DOM types.
+  expect(await inner.evaluate("document.title")).toBe("prototype ran");
+  expect(await inner.evaluate("(() => { try { return window.parent.document.title; } catch { return 'blocked'; } })()")).toBe("blocked");
+  await page.screenshot({ path: join(shots, "definition.png"), fullPage: true });
+
+  // Asking for a change reloads the open prototype by itself once the new session rewrites it.
+  await expect(frame.getByText("Design attempt 1")).toBeVisible();
+  await gate.getByRole("button", { name: "Request changes" }).click();
+  await gate.getByLabel("What should change").fill("Make the form wider");
+  await gate.getByRole("button", { name: "Send the changes" }).click();
+  await expect(page.getByTestId("stage-design")).toContainText("In review", { timeout: 20_000 });
+  await expect(page.frameLocator('iframe[title="Prototype index.html"]').getByText("Design attempt 2")).toBeVisible({ timeout: 20_000 });
+
+  await gate.getByRole("button", { name: "Approve and continue" }).click();
+  await expect(gate.getByRole("alert")).toContainText("Approve every screen first: index.html, stats.html");
+  await page.getByRole("button", { name: "Approve screen index.html" }).click();
+  await page.getByRole("button", { name: "Approve screen stats.html" }).click();
+  await approve("design");
+  await expect(page.getByTestId("stage-backlog")).toContainText("In review", { timeout: 20_000 });
+  // Tabs follow the order the stages wrote them.
+  const tabs = await page.getByRole("tab").allTextContents();
+  expect(tabs.slice(-2)).toEqual(["Prototype", "backlog"]);
+  await approve("backlog");
+  await expect(page.getByRole("link", { name: "Definition PR" })).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText("Definition approved.")).toBeVisible();
+
+  // The person merges the PR on GitHub; Forge notices, pulls main into the clone and says so.
+  const prNumber = (await page.getByRole("link", { name: "Definition PR" }).getAttribute("href"))!.split("/").at(-1)!;
+  execFileSync("git", ["-C", `${state.newApp}-origin.git`, "update-ref", "refs/heads/main", "refs/heads/forge/definition"]);
+  const gh = JSON.parse(readFileSync(state.ghState, "utf8")) as { prs: Record<string, { state: string }> };
+  gh.prs[prNumber]!.state = "MERGED";
+  writeFileSync(state.ghState, JSON.stringify(gh));
+  await expect(page.getByText("Definition merged.")).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByRole("link", { name: "Plan the backlog in Execution" })).toBeVisible();
 });

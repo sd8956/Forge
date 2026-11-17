@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
-import { api, UnauthorizedError, type BacklogTask, type OrchestratorSession, type PlanView, type Project, type QueueView, type RunSummary } from "./api.js";
+import { api, UnauthorizedError, type BacklogTask, type DefinitionView, type OrchestratorSession, type PlanView, type Project, type QueueView, type RunSummary } from "./api.js";
+import { factoryTree } from "./definition.js";
+import { DefinitionPage, StartDefinition } from "./pages/Definition.js";
 import { Icon } from "./components/Icon.js";
 import { UsageWidget } from "./components/UsageWidget.js";
 import { Board } from "./pages/Board.js";
@@ -63,6 +65,7 @@ export function App() {
   const [queue, setQueue] = useState<QueueView | null>(null);
   const [plans, setPlans] = useState<PlanView[]>([]);
   const [orchestrator, setOrchestrator] = useState<OrchestratorSession | null>(null);
+  const [definition, setDefinition] = useState<DefinitionView | null | undefined>(undefined);
   const [now, setNow] = useState(Date.now());
   const [unauthorized, setUnauthorized] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -86,6 +89,7 @@ export function App() {
     void api.backlog(project.id).then(setBacklog, () => setBacklog([]));
     void api.plans(project.id).then(setPlans, () => setPlans([]));
     void api.orchestrator(project.id).then((r) => setOrchestrator(r.session), () => setOrchestrator(null));
+    void api.definition(project.id).then(setDefinition, () => setDefinition(null));
   }, [project, now]);
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 10_000);
@@ -103,6 +107,12 @@ export function App() {
   }
 
   const runId = /^#\/runs\/([0-9a-f-]{36})/.exec(route)?.[1];
+  const onDefinition = route.startsWith("#/definition");
+  const started = (view: DefinitionView) => {
+    setProjectId(view.projectId);
+    setDefinition(view);
+    refresh();
+  };
   return (
     <div className="shell">
       <aside className="sidebar">
@@ -124,13 +134,30 @@ export function App() {
           </select>
         </label>
         <nav className="nav" aria-label="Main">
-          <a href="#/" className="active"><Icon name="board" /> Execution</a>
+          <a href="#/" className={onDefinition ? "" : "active"}><Icon name="board" /> Execution</a>
+          <a href="#/definition" className={onDefinition ? "active" : ""}><Icon name="pencil" /> Definition</a>
         </nav>
+        {onDefinition && definition ? (
+          <div className="factory-tree" aria-label=".factory files">
+            <div className="mono small">.factory/</div>
+            {factoryTree(definition).map((row) => (
+              <div key={row.path} className={`mono small tree-${row.state}`}>{row.state === "approved" ? "✓" : row.state === "current" ? "●" : "○"} {row.path}</div>
+            ))}
+          </div>
+        ) : null}
         <UsageWidget queue={queue} now={now} />
       </aside>
       <main className="main">
         {error ? <p role="alert">{error}</p> : null}
-        {runId ? (
+        {onDefinition ? (
+          project && definition ? (
+            <DefinitionPage project={project} view={definition} onChanged={(v) => { setDefinition(v); refresh(); }} />
+          ) : definition === undefined && project ? (
+            <p className="muted">Loading…</p>
+          ) : (
+            <StartDefinition onStarted={started} />
+          )
+        ) : runId ? (
           <RunDetail id={runId} now={now} />
         ) : project ? (
           <Board project={project} runs={runs} backlog={backlog} now={now} onChanged={refresh} queue={queue} plans={plans} orchestrator={orchestrator} />

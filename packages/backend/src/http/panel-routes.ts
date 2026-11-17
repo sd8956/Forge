@@ -110,11 +110,18 @@ export async function registerPanelRoutes(app: FastifyInstance, deps: PanelDeps)
   });
 
   // ---------------------------------------------------------- panel
-  if (existsSync(join(deps.webDist, "index.html"))) {
-    await app.register(fastifyStatic, { root: deps.webDist, prefix: "/", wildcard: false, index: ["index.html"] });
-  } else {
-    app.get("/", (_request, reply) =>
-      reply.type("text/html").send("<p>The panel is not built yet. Run <code>pnpm --filter @forge/web build</code>.</p>"),
-    );
-  }
+  // Files are looked up on every request, so rebuilding the panel (new hashed asset names) needs no restart.
+  await app.register(fastifyStatic, { root: deps.webDist, serve: false });
+  app.get("/", (_request, reply) =>
+    existsSync(join(deps.webDist, "index.html"))
+      ? reply.sendFile("index.html")
+      : reply.type("text/html").send("<p>The panel is not built yet. Run <code>pnpm --filter @forge/web build</code>.</p>"),
+  );
+  app.get("/favicon.svg", (_request, reply) => reply.sendFile("favicon.svg"));
+  app.get("/assets/*", (request, reply) => {
+    const path = (request.params as { "*": string })["*"];
+    // sendFile already refuses paths outside the root; keep asset paths to plain names anyway.
+    if (!/^[\w.-]+(\/[\w.-]+)*$/.test(path) || path.split("/").includes("..")) return reply.code(404).send({ error: "not_found" });
+    return reply.sendFile(`assets/${path}`);
+  });
 }

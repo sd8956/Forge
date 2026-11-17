@@ -37,6 +37,8 @@ export interface ForgeConfig {
   usagePausePercent: number;
   /** How often the scheduler looks at the queue (it also wakes on run events). */
   schedulerIntervalMs: number;
+  /** Project template a definition copies (agents, skills, pipeline, step settings). */
+  templateDir: string;
 }
 
 function intFromEnv(value: string | undefined, fallback: number): number {
@@ -68,6 +70,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, cwd = process.c
     maxConcurrency: Math.max(1, intFromEnv(env.FORGE_MAX_CONCURRENCY, 3)),
     usagePausePercent: intFromEnv(env.FORGE_USAGE_PAUSE_PERCENT, 90),
     schedulerIntervalMs: intFromEnv(env.FORGE_SCHEDULER_INTERVAL_MS, 5000),
+    templateDir: resolve(env.FORGE_TEMPLATE_DIR ?? join(import.meta.dirname, "..", "..", "..", "fixtures", "demo-project")),
   };
 }
 
