@@ -24,7 +24,8 @@ import { registerPanelRoutes } from "./panel-routes.js";
 import { registerWsRoutes } from "./ws-routes.js";
 import { runEvidence } from "./evidence.js";
 import { listBacklog } from "../projects/project-config.js";
-import { join } from "node:path";
+import { existsSync } from "node:fs";
+import { join, relative } from "node:path";
 import type { EventBus } from "../events/event-bus.js";
 
 interface ServerDeps {
@@ -244,7 +245,11 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     if (!params.success) return badRequest(reply, params.error);
     const run = deps.runs.get(params.data.runId);
     if (!run) return reply.code(404).send({ error: "unknown_run" });
-    return runEvidence(deps.runs.steps(run.id), () => join(run.worktreePath, ".factory", "runs", run.taskId));
+    // After the merge the worktree is gone; the archive holds the same tree, so rebase the step paths onto it.
+    const live = join(run.worktreePath, ".factory", "runs", run.taskId);
+    const root = existsSync(live) ? live : deps.archiveDir(run.id);
+    const steps = deps.runs.steps(run.id).map((step) => (root === live ? step : { ...step, outputPath: join(root, relative(live, step.outputPath)) }));
+    return runEvidence(steps, () => root);
   });
 
   app.get("/runs/:runId", async (request, reply) => {
