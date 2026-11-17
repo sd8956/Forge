@@ -121,6 +121,51 @@ export const prThreads = sqliteTable(
   (t) => [uniqueIndex("pr_thread_unique").on(t.runId, t.externalId), index("pr_thread_run_idx").on(t.runId)],
 );
 
+/** A plan the orchestrator proposed for a project; nothing runs until a person approves it. */
+export const executionPlans = sqliteTable(
+  "execution_plan",
+  {
+    id: text("id").primaryKey(),
+    projectPath: text("project_path").notNull(),
+    status: text("status", { enum: ["proposed", "approved", "rejected", "done", "cancelled"] }).notNull(),
+    rationale: text("rationale").notNull(),
+    proposedBy: text("proposed_by").notNull(),
+    createdAt: integer("created_at").notNull(),
+    decidedAt: integer("decided_at"),
+  },
+  (t) => [index("execution_plan_project_idx").on(t.projectPath, t.status)],
+);
+
+/** One task of a plan and its place in the queue. */
+export const planTasks = sqliteTable(
+  "plan_task",
+  {
+    id: text("id").primaryKey(),
+    planId: text("plan_id").notNull(),
+    projectPath: text("project_path").notNull(),
+    taskId: text("task_id").notNull(),
+    wave: integer("wave").notNull(),
+    modules: text("modules", { mode: "json" }).$type<string[]>().notNull(),
+    priority: integer("priority").notNull().default(0),
+    dependsOn: text("depends_on", { mode: "json" }).$type<string[]>().notNull(),
+    /** planned: plan not approved yet; queued: waiting for the scheduler; launched: has a run. */
+    state: text("state", { enum: ["planned", "queued", "launched", "cancelled"] }).notNull(),
+    /** Why the scheduler has not launched it yet, refreshed on every pass. */
+    waitReason: text("wait_reason"),
+    runId: text("run_id"),
+    queuedAt: integer("queued_at"),
+    createdAt: integer("created_at").notNull(),
+  },
+  (t) => [uniqueIndex("plan_task_unique").on(t.planId, t.taskId), index("plan_task_state_idx").on(t.state)],
+);
+
+/** Small persistent key-value state: queue pause and the latest usage window. */
+export const settings = sqliteTable("setting", {
+  key: text("key").primaryKey(),
+  value: text("value", { mode: "json" }).$type<unknown>().notNull(),
+  updatedAt: integer("updated_at").notNull(),
+});
+
 /** Append-only audit log. */
 export const events = sqliteTable(
   "event",
@@ -141,4 +186,6 @@ export type EventRow = typeof events.$inferSelect;
 export type RunRow = typeof runs.$inferSelect;
 export type ProjectRow = typeof projects.$inferSelect;
 export type PrThreadRow = typeof prThreads.$inferSelect;
+export type ExecutionPlanRow = typeof executionPlans.$inferSelect;
+export type PlanTaskRow = typeof planTasks.$inferSelect;
 export type NewRunRow = typeof runs.$inferInsert;

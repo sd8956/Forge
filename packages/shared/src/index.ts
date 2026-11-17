@@ -132,3 +132,25 @@ export interface StepView {
   endedAt: number | null;
   deadlineAt: number | null;
 }
+
+/** Input of the orchestrator's `propose_plan` tool: tasks in waves, each with the modules it touches. */
+export const proposePlanShape = {
+  rationale: z.string().trim().min(1).max(4000).describe("Why this order: dependencies, risk and what can run in parallel"),
+  waves: z
+    .array(
+      z.object({
+        tasks: z
+          .array(
+            z.object({
+              id: z.string().regex(/^TASK-\d{3,}$/),
+              modules: z.array(z.string().trim().min(1).max(200)).max(20).describe("Folders or files the task changes, such as src/server or public"),
+              priority: z.number().int().min(0).max(100).optional(),
+            }),
+          )
+          .min(1),
+      }),
+    )
+    .max(20)
+    .describe("Wave 1 first. A task may depend only on merged tasks or tasks in earlier waves"),
+};
+export const proposePlanInput = z.object(proposePlanShape);
