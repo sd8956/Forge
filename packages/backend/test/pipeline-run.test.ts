@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -157,6 +158,29 @@ describe("pipeline run with a fake claude", () => {
     expect(JSON.stringify(res.body)).toContain("does not trust");
     writeFileSync(join(ctx.root, "claude.json"), JSON.stringify({ projects: { [ctx.root]: { hasTrustDialogAccepted: true } } }));
     expect((await ctx.api.request("POST", "/runs", { projectPath: ctx.project, taskId: "TASK-001" })).status).toBe(201);
+  });
+
+  it("refuses a task whose dependencies are not merged yet, and accepts it once they are", async () => {
+    const ctx = await setup();
+    const res = await ctx.api.request("POST", "/runs", { projectPath: ctx.project, taskId: "TASK-002" });
+    expect(res.status).toBe(400);
+    expect((res.body as { message: string }).message).toBe(
+      "TASK-002 depends on TASK-001, which is not merged into main yet. Merge its pull request, update main in the project and run again.",
+    );
+    // A squash merge leaves a commit that names the task, like the PR titles the pr step writes.
+    execFileSync("git", ["-C", ctx.project, "-c", "user.name=t", "-c", "user.email=t@example.invalid", "commit", "-q", "--allow-empty", "-m", "feat: add and list todos (TASK-001) (#1)"]);
+    expect((await ctx.api.request("POST", "/runs", { projectPath: ctx.project, taskId: "TASK-002" })).status).toBe(201);
+  });
+
+  it("accepts a dependency merged with a merge commit", async () => {
+    const ctx = await setup();
+    const git = (...args: string[]) => execFileSync("git", ["-C", ctx.project, "-c", "user.name=t", "-c", "user.email=t@example.invalid", ...args]);
+    git("switch", "-q", "-c", "feat/TASK-001");
+    git("commit", "-q", "--allow-empty", "-m", "feat: work");
+    git("switch", "-q", "main");
+    expect((await ctx.api.request("POST", "/runs", { projectPath: ctx.project, taskId: "TASK-002" })).status).toBe(400);
+    git("merge", "-q", "--no-ff", "-m", "Merge branch feat/TASK-001", "feat/TASK-001");
+    expect((await ctx.api.request("POST", "/runs", { projectPath: ctx.project, taskId: "TASK-002" })).status).toBe(201);
   });
 
   it("rejects a project whose pipeline.yaml is invalid", async () => {
