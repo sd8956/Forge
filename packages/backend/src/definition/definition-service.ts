@@ -242,8 +242,10 @@ export class DefinitionService {
 
   private async openPullRequest(def: DefinitionRow): Promise<void> {
     try {
-      await this.git(def.worktreePath, ["push", "-q", "-u", "origin", DEFINITION_BRANCH]);
       const base = (await this.git(def.repoPath, ["rev-parse", "--abbrev-ref", "HEAD"])).trim() || "main";
+      // A new repository has no base branch on GitHub yet, and a PR needs one.
+      if (!(await this.git(def.repoPath, ["ls-remote", "--heads", "origin", base])).trim()) await this.git(def.repoPath, ["push", "-q", "-u", "origin", base]);
+      await this.git(def.worktreePath, ["push", "-q", "-u", "origin", DEFINITION_BRANCH]);
       const stages = this.deps.store.stages(def.projectId).map((s) => `- ${s.stage.replace("_", " ")}: ${s.summary ?? "approved"} (${s.commit ?? ""})`);
       const body = ["Project definition approved stage by stage in the Forge panel.", "", ...stages, "", "Merge it to let the Execution panel plan and run the backlog."].join("\n");
       const { stdout } = await promisify(execFile)(this.deps.config.ghBin, ["pr", "create", "--base", base, "--head", DEFINITION_BRANCH, "--title", "docs: project definition", "--body", body], {

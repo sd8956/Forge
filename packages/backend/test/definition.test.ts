@@ -91,7 +91,8 @@ describe("project definition with fake claude", () => {
     expect(done.prUrl).toMatch(/^https:\/\/github\.com\/example\/repo\/pull\/\d+$/);
     const gh = JSON.parse(readFileSync(ctx.ghState, "utf8")) as { prs: Record<string, { headRefName: string; title: string }> };
     expect(Object.values(gh.prs)).toEqual([expect.objectContaining({ headRefName: "forge/definition", title: "docs: project definition" })]);
-    expect(execFileSync("git", ["-C", ctx.origin, "branch", "--list", "forge/definition"], { encoding: "utf8" })).toContain("forge/definition");
+    // A new repository has no base branch on GitHub yet; Forge pushes it so the PR has a base.
+    expect(execFileSync("git", ["-C", ctx.origin, "branch", "--list"], { encoding: "utf8" }).split("\n").map((b) => b.replace("*", "").trim()).filter(Boolean).sort()).toEqual(["forge/definition", "main"]);
     expect(ctx.git("-C", done.worktreePath, "log", "--format=%s", "-6").trim().split("\n")).toEqual([
       "docs(definition): approve the backlog",
       "docs(definition): approve the design",
