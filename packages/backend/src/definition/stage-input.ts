@@ -50,7 +50,7 @@ export const STAGE_CONTRACTS: Readonly<Record<DefinitionStage, StageContract>> =
     writes: [
       {
         path: ".factory/test-strategy.md",
-        description: "Tool per platform (Playwright for web, HTTP tests for APIs), environments, seed data, how to start the app (`make up`), and which evidence each case type must leave (screenshots, request/response, reports).",
+        description: "Tool per platform (Playwright for web, Maestro on an emulator or simulator for mobile, HTTP tests for APIs), environments, seed data, how to start the app (`make up`), and which evidence each case type must leave (screenshots, request/response, reports).",
       },
     ],
   },
