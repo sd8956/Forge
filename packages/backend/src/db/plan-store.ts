@@ -1,70 +1,102 @@
 import { randomUUID } from "node:crypto";
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
-import type { PlannedTask } from "../domain/plan.js";
+import { nextPlanStatus, nextPlanTaskState, type PlanEvent, type PlannedTask, type PlanTaskEvent } from "../domain/plan.js";
 import type { Db } from "./client.js";
-import { executionPlans, planTasks, settings, type ExecutionPlanRow, type PlanTaskRow } from "./schema.js";
+import { events, executionPlans, planTasks, settings, type EventRow, type ExecutionPlanRow, type PlanTaskRow } from "./schema.js";
 
+type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
+
+export class PlanTransitionError extends Error {}
+
+/** All reads and writes of plans and the queue. Status changes only go through the transition tables. */
 export class PlanStore {
   constructor(
     private readonly db: Db,
     private readonly now: () => number = Date.now,
+    private readonly onEvent: (event: EventRow) => void = () => undefined,
   ) {}
 
-  /** Stores a proposal; an older proposal for the same project is superseded. */
+  /** Stores a proposal; an older proposal for the same project that is still proposed is superseded. */
   propose(projectPath: string, rationale: string, tasks: PlannedTask[], proposedBy: string): ExecutionPlanRow {
-    return this.db.transaction((tx) => {
+    const plan = this.db.transaction((tx) => {
       const now = this.now();
-      tx.update(executionPlans)
-        .set({ status: "rejected", decidedAt: now })
+      const older = tx
+        .select()
+        .from(executionPlans)
         .where(and(eq(executionPlans.projectPath, projectPath), eq(executionPlans.status, "proposed")))
-        .run();
-      const plan = tx.insert(executionPlans).values({ id: randomUUID(), projectPath, status: "proposed", rationale, proposedBy, createdAt: now }).returning().get();
+        .all();
+      for (const o of older) this.movePlan(tx, o, "supersede");
+      const created = tx.insert(executionPlans).values({ id: randomUUID(), projectPath, status: "proposed", rationale, proposedBy, createdAt: now }).returning().get();
       for (const t of tasks) {
-        tx.insert(planTasks).values({ id: randomUUID(), planId: plan.id, projectPath, ...t, state: "planned", createdAt: now }).run();
+        tx.insert(planTasks).values({ id: randomUUID(), planId: created.id, projectPath, ...t, state: "planned", createdAt: now }).run();
       }
-      return plan;
+      return created;
     });
+    this.recordEvent("plan", plan.id, "plan_proposed", { projectPath, tasks: tasks.map((t) => t.taskId), proposedBy });
+    return plan;
   }
 
   /** Approving queues every task of the plan for the scheduler. */
   approve(planId: string): { ok: true } | { ok: false; message: string } {
-    return this.db.transaction((tx) => {
+    const result = this.db.transaction((tx) => {
       const plan = tx.select().from(executionPlans).where(eq(executionPlans.id, planId)).get();
       if (!plan) return { ok: false as const, message: "Unknown plan" };
-      if (plan.status !== "proposed") return { ok: false as const, message: `The plan is ${plan.status}` };
+      if (!nextPlanStatus(plan.status, "approve")) return { ok: false as const, message: `The plan is ${plan.status}` };
       const tasks = tx.select().from(planTasks).where(eq(planTasks.planId, planId)).all();
       const busy = tx
         .select({ taskId: planTasks.taskId })
         .from(planTasks)
-        .where(and(eq(planTasks.projectPath, plan.projectPath), inArray(planTasks.state, ["queued"]), inArray(planTasks.taskId, tasks.map((t) => t.taskId))))
+        .where(and(eq(planTasks.projectPath, plan.projectPath), eq(planTasks.state, "queued"), inArray(planTasks.taskId, tasks.map((t) => t.taskId))))
         .all();
       if (busy.length) return { ok: false as const, message: `Already queued by another plan: ${busy.map((b) => b.taskId).join(", ")}` };
-      const now = this.now();
-      tx.update(executionPlans).set({ status: "approved", decidedAt: now }).where(eq(executionPlans.id, planId)).run();
-      tx.update(planTasks).set({ state: "queued", queuedAt: now }).where(eq(planTasks.planId, planId)).run();
+      this.movePlan(tx, plan, "approve");
+      for (const t of tasks) this.moveTask(tx, t, "queue", { queuedAt: this.now() });
       return { ok: true as const };
     });
+    if (result.ok) this.recordEvent("plan", planId, "plan_approved", {});
+    return result;
   }
 
   reject(planId: string): boolean {
-    const result = this.db
-      .update(executionPlans)
-      .set({ status: "rejected", decidedAt: this.now() })
-      .where(and(eq(executionPlans.id, planId), eq(executionPlans.status, "proposed")))
-      .run();
-    return result.changes > 0;
+    const rejected = this.db.transaction((tx) => {
+      const plan = tx.select().from(executionPlans).where(eq(executionPlans.id, planId)).get();
+      if (!plan || !nextPlanStatus(plan.status, "reject")) return false;
+      this.movePlan(tx, plan, "reject");
+      return true;
+    });
+    if (rejected) this.recordEvent("plan", planId, "plan_rejected", {});
+    return rejected;
+  }
+
+  /** Moves an approved plan to done or cancelled. */
+  finish(planId: string, event: "complete" | "cancel"): boolean {
+    return this.db.transaction((tx) => {
+      const plan = tx.select().from(executionPlans).where(eq(executionPlans.id, planId)).get();
+      if (!plan || !nextPlanStatus(plan.status, event)) return false;
+      this.movePlan(tx, plan, event);
+      return true;
+    });
   }
 
   get(planId: string): ExecutionPlanRow | undefined {
     return this.db.select().from(executionPlans).where(eq(executionPlans.id, planId)).get();
   }
 
-  plans(projectPath: string): ExecutionPlanRow[] {
-    return this.db.select().from(executionPlans).where(eq(executionPlans.projectPath, projectPath)).orderBy(desc(executionPlans.createdAt)).all();
+  plans(projectPath?: string): ExecutionPlanRow[] {
+    const query = this.db.select().from(executionPlans);
+    return (projectPath ? query.where(eq(executionPlans.projectPath, projectPath)) : query).orderBy(desc(executionPlans.createdAt)).all();
+  }
+
+  approvedPlans(): ExecutionPlanRow[] {
+    return this.db.select().from(executionPlans).where(eq(executionPlans.status, "approved")).all();
   }
 
   tasks(planId: string): PlanTaskRow[] {
     return this.db.select().from(planTasks).where(eq(planTasks.planId, planId)).orderBy(asc(planTasks.wave), asc(planTasks.createdAt)).all();
+  }
+
+  task(id: string): PlanTaskRow | undefined {
+    return this.db.select().from(planTasks).where(eq(planTasks.id, id)).get();
   }
 
   queued(): PlanTaskRow[] {
@@ -76,24 +108,25 @@ export class PlanStore {
   }
 
   markLaunched(id: string, runId: string): void {
-    this.db.update(planTasks).set({ state: "launched", runId, waitReason: null }).where(eq(planTasks.id, id)).run();
+    this.taskEvent(id, "launch", { runId, waitReason: null });
+  }
+
+  /** Takes a queued task out of the queue; `reason` explains why (a failed launch or a person). */
+  cancelTask(id: string, reason: string | null = null): void {
+    this.taskEvent(id, "cancel", { waitReason: reason });
+  }
+
+  /** Puts a launched task back in the queue, for a person who wants another run. */
+  requeue(id: string): void {
+    this.taskEvent(id, "requeue", { runId: null, queuedAt: this.now(), waitReason: null });
   }
 
   setWaitReason(id: string, reason: string | null): void {
     this.db.update(planTasks).set({ waitReason: reason }).where(eq(planTasks.id, id)).run();
   }
 
-  cancelTask(id: string): void {
-    this.db.update(planTasks).set({ state: "cancelled", waitReason: null }).where(eq(planTasks.id, id)).run();
-  }
-
-  /** Re-queues a task of an approved plan (after a cancelled or failed run). */
-  requeue(id: string): void {
-    this.db.update(planTasks).set({ state: "queued", runId: null, queuedAt: this.now() }).where(eq(planTasks.id, id)).run();
-  }
-
-  setPlanStatus(planId: string, status: ExecutionPlanRow["status"]): void {
-    this.db.update(executionPlans).set({ status }).where(eq(executionPlans.id, planId)).run();
+  recordEvent(entity: "plan" | "queue", id: string, type: string, payload: Record<string, unknown>): void {
+    this.onEvent(this.db.insert(events).values({ entity, entityId: id, type, payload, ts: this.now() }).returning().get());
   }
 
   // --------------------------------------------------------------- settings
@@ -107,5 +140,31 @@ export class PlanStore {
       .values({ key, value, updatedAt: this.now() })
       .onConflictDoUpdate({ target: settings.key, set: { value, updatedAt: this.now() } })
       .run();
+  }
+
+  // -------------------------------------------------------------- internals
+  private movePlan(tx: Tx, plan: ExecutionPlanRow, event: PlanEvent): void {
+    const to = nextPlanStatus(plan.status, event);
+    if (!to) throw new PlanTransitionError(`Plan ${plan.id} cannot ${event} from ${plan.status}`);
+    tx.update(executionPlans).set({ status: to, decidedAt: this.now() }).where(eq(executionPlans.id, plan.id)).run();
+    if (to === "rejected" || to === "cancelled") {
+      for (const t of tx.select().from(planTasks).where(eq(planTasks.planId, plan.id)).all()) {
+        if (nextPlanTaskState(t.state, "cancel")) this.moveTask(tx, t, "cancel");
+      }
+    }
+  }
+
+  private moveTask(tx: Tx, task: PlanTaskRow, event: PlanTaskEvent, patch: Partial<PlanTaskRow> = {}): void {
+    const to = nextPlanTaskState(task.state, event);
+    if (!to) throw new PlanTransitionError(`${task.taskId} cannot ${event} from ${task.state}`);
+    tx.update(planTasks).set({ ...patch, state: to }).where(eq(planTasks.id, task.id)).run();
+  }
+
+  private taskEvent(id: string, event: PlanTaskEvent, patch: Partial<PlanTaskRow>): void {
+    this.db.transaction((tx) => {
+      const task = tx.select().from(planTasks).where(eq(planTasks.id, id)).get();
+      if (!task) throw new PlanTransitionError(`Unknown plan task ${id}`);
+      this.moveTask(tx, task, event, patch);
+    });
   }
 }

@@ -57,3 +57,17 @@ describe("PlanStore", () => {
     expect(plans.getSetting("missing")).toBeUndefined();
   });
 });
+
+describe("PlanStore transitions", () => {
+  it("cancels the tasks of a rejected plan and refuses moves the tables do not allow", () => {
+    const opened = openDatabase(":memory:");
+    const plans = new PlanStore(opened.db);
+    const plan = plans.propose("/repo", "one", [task("TASK-001")], "orchestrator");
+    const [t] = plans.tasks(plan.id);
+    expect(() => plans.markLaunched(t!.id, "run-1")).toThrow("TASK-001 cannot launch from planned");
+    plans.reject(plan.id);
+    expect(plans.tasks(plan.id)[0]?.state).toBe("cancelled");
+    expect(plans.finish(plan.id, "complete")).toBe(false);
+    opened.close();
+  });
+});

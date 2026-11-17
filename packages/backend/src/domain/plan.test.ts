@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { validatePlan, type PlanProposal } from "./plan.js";
+import { nextPlanStatus, nextPlanTaskState, validatePlan, type PlanProposal } from "./plan.js";
 
 const backlog = [
   { id: "TASK-001", dependsOn: [] },
@@ -39,5 +39,33 @@ describe("validatePlan", () => {
     const result = validatePlan(proposal, backlog, new Set());
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.issues).toContain(issue);
+  });
+});
+
+describe("plan transitions", () => {
+  it.each([
+    ["proposed", "approve", "approved"],
+    ["proposed", "reject", "rejected"],
+    ["proposed", "supersede", "rejected"],
+    ["approved", "complete", "done"],
+    ["approved", "cancel", "cancelled"],
+    ["approved", "approve", null],
+    ["rejected", "approve", null],
+    ["done", "cancel", null],
+  ] as const)("%s --%s--> %s", (from, event, to) => {
+    expect(nextPlanStatus(from, event)).toBe(to);
+  });
+
+  it.each([
+    ["planned", "queue", "queued"],
+    ["planned", "cancel", "cancelled"],
+    ["queued", "launch", "launched"],
+    ["queued", "cancel", "cancelled"],
+    ["launched", "requeue", "queued"],
+    ["planned", "launch", null],
+    ["launched", "cancel", null],
+    ["cancelled", "queue", null],
+  ] as const)("task %s --%s--> %s", (from, event, to) => {
+    expect(nextPlanTaskState(from, event)).toBe(to);
   });
 });

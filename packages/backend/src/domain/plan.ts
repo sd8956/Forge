@@ -56,3 +56,33 @@ export function validatePlan(proposal: PlanProposal, backlog: { id: string; depe
   if (tasks.length === 0 && issues.length === 0) issues.push("The plan has no tasks");
   return issues.length ? { ok: false, issues } : { ok: true, tasks };
 }
+
+export type PlanStatus = "proposed" | "approved" | "rejected" | "done" | "cancelled";
+export type PlanEvent = "approve" | "reject" | "supersede" | "complete" | "cancel";
+export type PlanTaskState = "planned" | "queued" | "launched" | "cancelled";
+export type PlanTaskEvent = "queue" | "launch" | "requeue" | "cancel";
+
+const PLAN_TRANSITIONS: Record<PlanStatus, Partial<Record<PlanEvent, PlanStatus>>> = {
+  proposed: { approve: "approved", reject: "rejected", supersede: "rejected" },
+  approved: { complete: "done", cancel: "cancelled" },
+  rejected: {},
+  done: {},
+  cancelled: {},
+};
+
+const PLAN_TASK_TRANSITIONS: Record<PlanTaskState, Partial<Record<PlanTaskEvent, PlanTaskState>>> = {
+  planned: { queue: "queued", cancel: "cancelled" },
+  queued: { launch: "launched", cancel: "cancelled" },
+  launched: { requeue: "queued" },
+  cancelled: {},
+};
+
+/** The only way a plan changes status; null when the event does not apply. */
+export function nextPlanStatus(from: PlanStatus, event: PlanEvent): PlanStatus | null {
+  return PLAN_TRANSITIONS[from][event] ?? null;
+}
+
+/** The only way a plan task moves through the queue; null when the event does not apply. */
+export function nextPlanTaskState(from: PlanTaskState, event: PlanTaskEvent): PlanTaskState | null {
+  return PLAN_TASK_TRANSITIONS[from][event] ?? null;
+}
