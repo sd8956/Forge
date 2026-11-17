@@ -8,3 +8,4 @@ coverage/
 *.db-journal
 *.db-wal
 *.db-shm
+.forge-e2e/
