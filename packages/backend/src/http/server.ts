@@ -1,3 +1,4 @@
+import type { Duplex } from "node:stream";
 import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { activityHookInput, notificationHookInput, preToolUseHookInput, sessionEndHookInput, startRunRequest, stopHookInput } from "@forge/shared";
@@ -12,6 +13,8 @@ import { RunRequestError, type RunService } from "../runs/run-service.js";
 import { StepRequestError, type StepService } from "../steps/step-service.js";
 import { isLocalHost, isLocalOrigin, type LoginCodes, readCookie, SESSION_COOKIE, verifySessionCookie } from "./panel-auth.js";
 import { registerPanelRoutes } from "./panel-routes.js";
+import { registerWsRoutes } from "./ws-routes.js";
+import type { EventBus } from "../events/event-bus.js";
 
 interface ServerDeps {
   token: string;
@@ -28,6 +31,7 @@ interface ServerDeps {
   port: () => number;
   baseUrl: () => string;
   webDist: string;
+  bus: EventBus;
   logger?: boolean;
 }
 
@@ -44,7 +48,18 @@ function badRequest(reply: FastifyReply, error: z.ZodError) {
 }
 
 export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
-  const app = Fastify({ logger: deps.logger ?? false, bodyLimit: 1024 * 1024 });
+  const app = Fastify({ logger: deps.logger ?? false, bodyLimit: 1024 * 1024, forceCloseConnections: true });
+
+  // Upgraded and refused-upgrade sockets are not tracked by the HTTP server, so close them ourselves.
+  const upgradeSockets = new Set<Duplex>();
+  app.server.on("upgrade", (_request, socket: Duplex) => {
+    upgradeSockets.add(socket);
+    socket.once("close", () => upgradeSockets.delete(socket));
+  });
+  app.addHook("preClose", (done) => {
+    for (const socket of upgradeSockets) socket.destroy();
+    done();
+  });
 
   app.get("/health", () => ({ ok: true }));
 
@@ -52,19 +67,22 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
   // the public shell needs the local token (CLI, hooks, MCP) or the panel's session cookie. Cookie
   // requests that change state, and WebSockets, must also come from the panel's own Origin.
   app.addHook("onRequest", async (request, reply) => {
-    if (!isLocalHost(request.headers.host, deps.port())) return reply.code(403).send({ error: "forbidden_host" });
+    const refuse = async (code: number, error: string) => {
+      await reply.code(code).send({ error });
+      // A refused WebSocket upgrade must not leave its socket open.
+      if (request.headers.upgrade) request.raw.socket.destroySoon();
+    };
+    if (!isLocalHost(request.headers.host, deps.port())) return refuse(403, "forbidden_host");
     const path = request.url.split("?")[0] ?? "";
     if (isPublic(path)) return;
     if (tokenMatches(deps.token, request.headers[TOKEN_HEADER])) return;
-    if (!verifySessionCookie(deps.token, readCookie(request.headers.cookie, SESSION_COOKIE))) {
-      return reply.code(401).send({ error: "unauthorized" });
-    }
+    if (!verifySessionCookie(deps.token, readCookie(request.headers.cookie, SESSION_COOKIE))) return refuse(401, "unauthorized");
     const changesState = request.method !== "GET" && request.method !== "HEAD";
     const websocket = request.headers.upgrade?.toLowerCase() === "websocket";
-    if ((changesState || websocket) && !isLocalOrigin(request.headers.origin, deps.port())) {
-      return reply.code(403).send({ error: "forbidden_origin" });
-    }
+    if ((changesState || websocket) && !isLocalOrigin(request.headers.origin, deps.port())) return refuse(403, "forbidden_origin");
   });
+
+  await registerWsRoutes(app, { bus: deps.bus });
 
   await registerPanelRoutes(app, {
     token: deps.token,

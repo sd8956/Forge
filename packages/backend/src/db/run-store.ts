@@ -2,7 +2,7 @@ import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import type { RunStatus, RunView } from "@forge/shared";
 import { nextRunStatus, type RunEvent, type RunTransitionResult } from "../domain/run-machine.js";
 import type { Db } from "./client.js";
-import { events, runs, steps, type NewRunRow, type RunRow, type StepRow } from "./schema.js";
+import { events, runs, steps, type EventRow, type NewRunRow, type RunRow, type StepRow } from "./schema.js";
 
 const OPEN_STATUSES: RunStatus[] = ["queued", "running", "needs_human"];
 
@@ -19,6 +19,7 @@ export class RunStore {
   constructor(
     private readonly db: Db,
     private readonly now: () => number = Date.now,
+    private readonly onEvent: (event: EventRow) => void = () => undefined,
   ) {}
 
   insert(row: Omit<NewRunRow, "status" | "createdAt" | "updatedAt" | "attempts">): RunRow {
@@ -35,7 +36,7 @@ export class RunStore {
         .values({ ...row, status: "queued", attempts: {}, createdAt: now, updatedAt: now })
         .returning()
         .get();
-      tx.insert(events).values({ entity: "run", entityId: inserted.id, type: "created", payload: { taskId: row.taskId }, ts: now }).run();
+      this.onEvent(tx.insert(events).values({ entity: "run", entityId: inserted.id, type: "created", payload: { taskId: row.taskId }, ts: now }).returning().get());
       return inserted;
     });
   }
@@ -68,14 +69,14 @@ export class RunStore {
       const result = nextRunStatus(current.status, event);
       const ts = this.now();
       if (!result.ok) {
-        tx.insert(events).values({ entity: "run", entityId: id, type: "transition_rejected", payload: { event, from: current.status, ...payload }, ts }).run();
+        this.onEvent(tx.insert(events).values({ entity: "run", entityId: id, type: "transition_rejected", payload: { event, from: current.status, ...payload }, ts }).returning().get());
         return result;
       }
       tx.update(runs)
         .set({ ...patch, status: result.to, updatedAt: ts })
         .where(and(eq(runs.id, id), eq(runs.status, result.from)))
         .run();
-      tx.insert(events).values({ entity: "run", entityId: id, type: "transition", payload: { event, from: result.from, to: result.to, ...payload }, ts }).run();
+      this.onEvent(tx.insert(events).values({ entity: "run", entityId: id, type: "transition", payload: { event, from: result.from, to: result.to, ...payload }, ts }).returning().get());
       return result;
     });
   }
@@ -85,7 +86,7 @@ export class RunStore {
   }
 
   recordEvent(id: string, type: string, payload: Record<string, unknown>): void {
-    this.db.insert(events).values({ entity: "run", entityId: id, type, payload, ts: this.now() }).run();
+    this.onEvent(this.db.insert(events).values({ entity: "run", entityId: id, type, payload, ts: this.now() }).returning().get());
   }
 }
 

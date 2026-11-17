@@ -10,6 +10,7 @@ import { LoginCodes } from "./http/panel-auth.js";
 import { loginUrl } from "./http/panel-routes.js";
 import { buildServer } from "./http/server.js";
 import { ProjectStore } from "./db/project-store.js";
+import { EventBus } from "./events/event-bus.js";
 import { EngramAdapter, type MemoryAdapter } from "./memory/memory-adapter.js";
 import { Tmux } from "./runner/tmux.js";
 import { RunService } from "./runs/run-service.js";
@@ -43,8 +44,9 @@ export function memoryProjectFor(projectPath: string): string {
 export async function startBackend(config: ForgeConfig, opts: { logger?: boolean; memory?: MemoryAdapter } = {}): Promise<Backend> {
   const token = loadOrCreateToken(config.home);
   const { db, close: closeDb } = openDatabase(join(config.home, "forge.db"));
-  const store = new StepStore(db);
-  const runs = new RunStore(db);
+  const bus = new EventBus();
+  const store = new StepStore(db, Date.now, (event) => bus.publish(event));
+  const runs = new RunStore(db, Date.now, (event) => bus.publish(event));
   const tmux = new Tmux(config.tmuxSocket);
   const log = (msg: string, extra?: Record<string, unknown>) => {
     if (opts.logger) console.error(`[forge] ${msg}`, extra ?? "");
@@ -73,6 +75,7 @@ export async function startBackend(config: ForgeConfig, opts: { logger?: boolean
     port: () => port,
     baseUrl: () => url,
     webDist: config.webDist,
+    bus,
     logger: opts.logger ?? false,
   });
   await app.listen({ host: config.host, port: config.port });
