@@ -28,7 +28,9 @@ tmux -L forge attach -t forge-TASK-001-plan-1      # watch a step or answer a pr
 ```
 
 The project must be a git repository with a `.factory/` folder and a `pipeline.yaml` (see
-`fixtures/demo-project/`), and must be trusted once in Claude Code. State lives in `./.forge/` (database, local token, rendered step settings).
+`fixtures/demo-project/`), and must be trusted once in Claude Code. A task whose `Depends on:` tasks are not
+merged into the base branch is refused. `status` shows, per step, the permission prompts a person answered and
+the tool calls the backend's guard denied (ADR 0006). State lives in `./.forge/` (database, local token, rendered step settings).
 
 ## Development
 
