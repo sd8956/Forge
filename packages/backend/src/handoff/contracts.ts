@@ -69,6 +69,18 @@ export const STEP_CONTRACTS: Readonly<Record<StepKind, StepContract>> = {
     extras: z.object({ pr_url: z.url().regex(/\/pull\/\d+$/), pr_number: z.number().int().min(1) }),
     extrasExample: { pr_url: "https://github.com/owner/repo/pull/1", pr_number: 1 },
   },
+  review_fix: {
+    goal: "Answer every pull request thread and failed check listed below: fix what applies (test-first, committed), reply on each thread with what you changed or why it does not apply. Do not push; the pr step pushes after security and e2e pass again.",
+    reads: ["CLAUDE.md", ".factory/threat-model.md"],
+    outputs: [{ file: "replies.md", description: "One section per thread: what was asked, what you did, the reply you posted." }],
+    extras: z.object({
+      threads: z
+        .array(z.object({ id: z.string().min(1), action: z.enum(["fixed", "not_applicable", "answered"]), reply: z.string().trim().min(1) }))
+        .min(1),
+      commits: z.array(z.string().regex(/^[0-9a-f]{7,40}$/)).default([]),
+    }),
+    extrasExample: { threads: [{ id: "review_comment:123", action: "fixed", reply: "Renamed the handler and added a test." }], commits: ["1a2b3c4"] },
+  },
 };
 
 export const SEVERITIES = ["low", "medium", "high", "critical"] as const;

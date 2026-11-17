@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parsePipeline } from "../pipeline/pipeline.js";
-import { decideNext, firstStep, type StepOutcome } from "./next-action.js";
+import { decideNext, firstStep, stepsFor, type StepOutcome } from "./next-action.js";
 
 const pipeline = parsePipeline(`
 version: 1
@@ -11,6 +11,10 @@ steps:
   - { id: security, agent: forge-security, model: opus, settings: s.json, on_fail: { goto: development, max_attempts: 3 } }
   - { id: e2e, agent: forge-tester, model: sonnet, settings: s.json, on_fail: { goto: development } }
   - { id: pr, agent: forge-pr, model: sonnet, settings: s.json }
+review:
+  max_rounds: 2
+  fix: { id: review_fix, agent: forge-review-fixer, model: sonnet, settings: s.json, exit: { threads_answered: true } }
+  then: [security, e2e, pr]
 `);
 
 const outcome = (step: StepOutcome["step"], result: StepOutcome["result"], cause: StepOutcome["cause"] = "reported"): StepOutcome => ({ step, result, cause });
@@ -82,5 +86,25 @@ describe("decideNext", () => {
     const attempts = { security: 1 };
     decideNext(pipeline, attempts, outcome("security", "failed"));
     expect(attempts).toEqual({ security: 1 });
+  });
+});
+
+describe("decideNext in review mode", () => {
+  it("runs review_fix, then security, e2e and pr, then completes", () => {
+    expect(stepsFor(pipeline, "review").map((s) => s.id)).toEqual(["review_fix", "security", "e2e", "pr"]);
+    expect(firstStep(pipeline, "review")).toBe("review_fix");
+    expect(decideNext(pipeline, {}, outcome("review_fix", "done"), "review")).toMatchObject({ kind: "launch", step: "security" });
+    expect(decideNext(pipeline, {}, outcome("e2e", "done"), "review")).toMatchObject({ kind: "launch", step: "pr" });
+    expect(decideNext(pipeline, {}, outcome("pr", "done"), "review")).toMatchObject({ kind: "complete" });
+  });
+
+  it("sends a failed security or e2e back to review_fix instead of development", () => {
+    expect(decideNext(pipeline, {}, outcome("security", "failed"), "review")).toMatchObject({ kind: "launch", step: "review_fix", reason: "on_fail" });
+    expect(decideNext(pipeline, {}, outcome("e2e", "failed"), "review")).toMatchObject({ kind: "launch", step: "review_fix" });
+  });
+
+  it("keeps build mode unchanged", () => {
+    expect(stepsFor(pipeline, "build").map((s) => s.id)).toEqual(["plan", "development", "security", "e2e", "pr"]);
+    expect(decideNext(pipeline, {}, outcome("security", "failed"))).toMatchObject({ step: "development" });
   });
 });
