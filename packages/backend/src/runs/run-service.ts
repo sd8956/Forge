@@ -190,6 +190,7 @@ export class RunService implements StepPolicy {
 
     run = this.mustGet(runId);
     if (run.status !== "running") return;
+    if (!(await this.agentPreflight(run))) return;
     try {
       await this.launch(run, run.currentStep);
     } catch (error) {
@@ -296,12 +297,60 @@ export class RunService implements StepPolicy {
     return n;
   }
 
+  /**
+   * Claude Code loads agents from the task worktree, so a worktree created before
+   * an agent existed cannot run that step. Instead of a failed launch, hand the run
+   * to a person with the fix: `forge resume <run> --merge-base`.
+   */
+  private async agentPreflight(run: RunRow): Promise<boolean> {
+    const pipeline = loadPipeline(run.projectPath);
+    const def = stepsFor(pipeline, run.mode).find((s) => s.id === run.currentStep) ?? stepById(pipeline, run.currentStep);
+    const agentFile = `.claude/agents/${def.agent}.md`;
+    if (existsSync(join(run.worktreePath, agentFile))) return true;
+    const onBase = await git("git", ["-C", run.projectPath, "cat-file", "-e", `${run.baseBranch}:${agentFile}`]).then(
+      () => true,
+      () => false,
+    );
+    this.deps.runs.recordEvent(run.id, "agent_missing", {
+      agent: def.agent,
+      step: run.currentStep,
+      onBase,
+      fix: onBase
+        ? `Merge ${run.baseBranch} into ${run.branch}: pnpm forge resume ${run.id} --merge-base`
+        : `Add ${agentFile} to ${run.baseBranch}, then: pnpm forge resume ${run.id} --merge-base`,
+    });
+    this.deps.runs.transition(run.id, "attention", { exitReason: `agent_missing:${def.agent}` });
+    return false;
+  }
+
+  /** Merges the base branch into the task branch (a person asked for it with --merge-base). */
+  private async mergeBase(run: RunRow): Promise<{ ok: true } | { ok: false; message: string }> {
+    const status = (await git("git", ["-C", run.worktreePath, "status", "--porcelain", "--untracked-files=no"], { encoding: "utf8" })).stdout.trim();
+    if (status) return { ok: false, message: `The worktree has uncommitted changes; commit or discard them before merging ${run.baseBranch}.` };
+    // Use the repository's own identity; fall back to a neutral one so the merge commit never fails.
+    const email = await git("git", ["-C", run.worktreePath, "config", "user.email"], { encoding: "utf8" }).then((r) => r.stdout.trim(), () => "");
+    const identity = email ? [] : ["-c", "user.name=Forge", "-c", "user.email=forge@localhost"];
+    try {
+      await git("git", ["-C", run.worktreePath, ...identity, "merge", "--no-edit", run.baseBranch], { encoding: "utf8" });
+    } catch (error) {
+      await git("git", ["-C", run.worktreePath, "merge", "--abort"]).catch(() => undefined);
+      return { ok: false, message: `Merging ${run.baseBranch} into ${run.branch} conflicts; resolve it by hand in ${run.worktreePath}. ${String((error as { stderr?: string }).stderr ?? "").trim().slice(0, 300)}` };
+    }
+    const head = (await git("git", ["-C", run.worktreePath, "rev-parse", "--short", "HEAD"], { encoding: "utf8" })).stdout.trim();
+    this.deps.runs.recordEvent(run.id, "base_merged", { base: run.baseBranch, head });
+    return { ok: true };
+  }
+
   // ------------------------------------------------------- resume, cancel
 
-  async resume(runId: string): Promise<{ ok: boolean; message: string }> {
+  async resume(runId: string, opts: { mergeBase?: boolean } = {}): Promise<{ ok: boolean; message: string }> {
     const run = this.deps.runs.get(runId);
     if (!run) return { ok: false, message: `Unknown run ${runId}` };
     if (!isOpenRunStatus(run.status)) return { ok: false, message: `Run is ${run.status}; nothing to resume.` };
+    if (opts.mergeBase) {
+      const merged = await this.mergeBase(run);
+      if (!merged.ok) return merged;
+    }
 
     const latest = this.deps.runs.latestStep(runId);
     if (latest && !isTerminalStepStatus(latest.status) && (await this.deps.steps.isSessionAlive(latest))) {

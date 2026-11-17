@@ -30,7 +30,7 @@
 
 ## Consequences
 
-- A task worktree created before the review agents existed needs `main` merged in before a review round (agents
-  load from the worktree; F0 finding). A launch preflight for missing agent files would make this explicit.
-- Posting a reply on GitHub still asks a person in the review_fix step (`gh api -X POST` did not match the prefix
-  allow rule). It is an outward action, so the prompt is acceptable until a tighter rule is verified.
+- A task worktree created before an agent existed cannot run that step (agents load from the worktree; F0 finding).
+  A launch preflight turns this into `needs_human` with `forge resume --merge-base` as the fix.
+- Posting replies is allowed only through two exact `gh api -X POST` shapes (thread replies and PR comments), verified
+  with a real probe; any other API write still asks a person.

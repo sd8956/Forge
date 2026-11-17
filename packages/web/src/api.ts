@@ -56,7 +56,8 @@ export const api = {
   run: (id: string) => request<RunDetail>(`/runs/${id}`),
   evidence: (id: string) => request<Evidence>(`/runs/${id}/evidence`),
   startRun: (projectPath: string, taskId: string) => request<RunView>("/runs", { method: "POST", body: JSON.stringify({ projectPath, taskId }) }),
-  resume: (id: string) => request<{ message: string }>(`/runs/${id}/resume`, { method: "POST", body: "{}" }),
+  resume: (id: string, opts: { mergeBase?: boolean } = {}) =>
+    request<{ message: string }>(`/runs/${id}/resume`, { method: "POST", body: JSON.stringify({ mergeBase: opts.mergeBase ?? false }) }),
   cancel: (id: string) => request<{ message: string }>(`/runs/${id}/cancel`, { method: "POST", body: "{}" }),
 };
 

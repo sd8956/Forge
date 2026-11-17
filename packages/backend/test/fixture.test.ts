@@ -25,6 +25,15 @@ describe("demo-project fixture contract", () => {
     expect(pipeline.review).toMatchObject({ max_rounds: 3, fix: { id: "review_fix", agent: "forge-review-fixer" }, then: ["security", "e2e", "pr"] });
   });
 
+  it("lets review_fix reply on threads and nothing else on the GitHub API", () => {
+    const fixer = steps.find((s) => s.step.id === "review_fix");
+    expect(fixer?.settings.permissions.allow).toEqual(
+      expect.arrayContaining(["Bash(gh api -X POST repos/*/pulls/*/comments/*/replies -F body=@*)", "Bash(gh api -X POST repos/*/issues/*/comments -F body=@*)"]),
+    );
+    // A prefix rule ending in ":*" needs a space after it, so it never matched these calls (verified on 2.1.322).
+    expect(fixer?.settings.permissions.allow.some((r) => r.startsWith("Bash(gh api -X POST repos/:"))).toBe(false);
+  });
+
   it("lets the pr step update an existing PR without a prompt", () => {
     const pr = steps.find((s) => s.step.id === "pr");
     expect(pr?.settings.permissions.allow).toEqual(expect.arrayContaining(["Bash(gh pr create:*)", "Bash(gh pr edit:*)"]));

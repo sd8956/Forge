@@ -220,7 +220,9 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
   app.post("/runs/:runId/resume", async (request, reply) => {
     const params = runIdParams.safeParse(request.params);
     if (!params.success) return badRequest(reply, params.error);
-    const result = await deps.runService.resume(params.data.runId);
+    const body = z.object({ mergeBase: z.boolean().optional() }).safeParse(request.body ?? {});
+    if (!body.success) return badRequest(reply, body.error);
+    const result = await deps.runService.resume(params.data.runId, { mergeBase: body.data.mergeBase ?? false });
     return reply.code(result.ok ? 200 : 409).send(result);
   });
 
