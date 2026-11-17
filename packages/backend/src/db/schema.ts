@@ -159,6 +159,38 @@ export const planTasks = sqliteTable(
   (t) => [uniqueIndex("plan_task_unique").on(t.planId, t.taskId), index("plan_task_state_idx").on(t.state)],
 );
 
+/** A project's definition in progress: its worktree and the person's idea. */
+export const definitions = sqliteTable("definition", {
+  projectId: text("project_id").primaryKey(),
+  repoPath: text("repo_path").notNull(),
+  worktreePath: text("worktree_path").notNull(),
+  branch: text("branch").notNull(),
+  idea: text("idea").notNull(),
+  prUrl: text("pr_url"),
+  createdAt: integer("created_at").notNull(),
+});
+
+/** One of the six stages of a project definition (the definition's data model). */
+export const definitionStages = sqliteTable(
+  "definition_stage",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id").notNull(),
+    stage: text("stage", { enum: ["intake", "requirements", "architecture", "test_strategy", "design", "backlog"] }).notNull(),
+    status: text("status", { enum: ["pending", "running", "in_review", "changes_requested", "approved"] }).notNull(),
+    summary: text("summary"),
+    stepId: text("step_id"),
+    /** The person's latest "Request changes" text, passed to the next session. */
+    feedback: text("feedback"),
+    lastError: text("last_error"),
+    approvedScreens: text("approved_screens", { mode: "json" }).$type<string[]>().notNull(),
+    approvedAt: integer("approved_at"),
+    commit: text("commit"),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (t) => [uniqueIndex("definition_stage_unique").on(t.projectId, t.stage)],
+);
+
 /** Small persistent key-value state: queue pause and the latest usage window. */
 export const settings = sqliteTable("setting", {
   key: text("key").primaryKey(),
@@ -188,4 +220,6 @@ export type ProjectRow = typeof projects.$inferSelect;
 export type PrThreadRow = typeof prThreads.$inferSelect;
 export type ExecutionPlanRow = typeof executionPlans.$inferSelect;
 export type PlanTaskRow = typeof planTasks.$inferSelect;
+export type DefinitionRow = typeof definitions.$inferSelect;
+export type DefinitionStageRow = typeof definitionStages.$inferSelect;
 export type NewRunRow = typeof runs.$inferInsert;

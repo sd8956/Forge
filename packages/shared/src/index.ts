@@ -213,3 +213,42 @@ export interface QueueView {
 
 export const queuePauseRequest = z.object({ reason: z.string().trim().min(1).max(200).default("Paused by a person") });
 export const orchestratorStartRequest = z.object({ prompt: z.string().trim().max(4000).optional() });
+
+/** The six stages of a project definition, in order. */
+export const DEFINITION_STAGES = ["intake", "requirements", "architecture", "test_strategy", "design", "backlog"] as const;
+export type DefinitionStage = (typeof DEFINITION_STAGES)[number];
+export type DefinitionStageStatus = "pending" | "running" | "in_review" | "changes_requested" | "approved";
+
+export interface DefinitionStageView {
+  stage: DefinitionStage;
+  status: DefinitionStageStatus;
+  /** Latest validation summary, such as "14 FR · 6 NFR". */
+  summary: string | null;
+  stepId: string | null;
+  feedback: string | null;
+  lastError: string | null;
+  /** Prototype screens the person approved (design stage only). */
+  approvedScreens: string[];
+  approvedAt: number | null;
+  commit: string | null;
+}
+
+export interface DefinitionView {
+  projectId: string;
+  repoPath: string;
+  worktreePath: string;
+  branch: string;
+  idea: string;
+  prUrl: string | null;
+  stages: DefinitionStageView[];
+  /** Files under .factory/ in the definition worktree (relative paths). */
+  files: string[];
+  prototypeScreens: string[];
+}
+
+export const startDefinitionRequest = z.object({
+  path: z.string().trim().min(1),
+  idea: z.string().trim().min(10).max(8000),
+});
+export const requestChangesRequest = z.object({ feedback: z.string().trim().min(3).max(8000) });
+export const approveScreenRequest = z.object({ screen: z.string().trim().min(1).max(200) });
