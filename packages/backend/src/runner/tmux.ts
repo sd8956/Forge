@@ -15,9 +15,23 @@ export interface NewSessionOptions {
 export class Tmux {
   constructor(private readonly socket: string) {}
 
+  /**
+   * Starts a detached session. A client that connects while the server is exiting (its last session just closed)
+   * gets "server exited unexpectedly" and no session is created, so that error is retried with a short backoff.
+   */
   async newSession(opts: NewSessionOptions): Promise<void> {
     const envArgs = Object.entries(opts.env ?? {}).flatMap(([k, v]) => ["-e", `${k}=${v}`]);
-    await this.tmux(["new-session", "-d", "-s", opts.name, "-c", opts.cwd, "-x", "200", "-y", "50", ...envArgs, opts.command]);
+    const args = ["new-session", "-d", "-s", opts.name, "-c", opts.cwd, "-x", "200", "-y", "50", ...envArgs, opts.command];
+    for (let attempt = 1; ; attempt++) {
+      try {
+        await this.tmux(args);
+        return;
+      } catch (error) {
+        const stderr = String((error as { stderr?: string }).stderr ?? error);
+        if (attempt >= 5 || !/server exited unexpectedly|lost server|no server running|error connecting/i.test(stderr)) throw error;
+        await new Promise((r) => setTimeout(r, 50 * attempt));
+      }
+    }
   }
 
   async killSession(name: string): Promise<boolean> {

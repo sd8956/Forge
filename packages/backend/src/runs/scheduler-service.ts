@@ -178,9 +178,11 @@ export class SchedulerService {
       });
     }
 
+    // Open runs hold a slot and their modules; a run waiting for review keeps its modules until the merge.
     const active: ActiveRun[] = this.deps.runs
-      .listOpen()
-      .map((r) => ({ runId: r.id, projectPath: r.projectPath, taskId: r.taskId, modules: this.deps.plans.launchedFor(r.id)?.modules ?? [] }));
+      .list()
+      .filter((r) => r.status === "queued" || r.status === "running" || r.status === "needs_human" || r.status === "waiting_review")
+      .map((r) => ({ runId: r.id, projectPath: r.projectPath, taskId: r.taskId, modules: this.deps.plans.launchedFor(r.id)?.modules ?? [], slot: r.status !== "waiting_review" }));
     const reviews = this.reviewCandidates();
     const projectCaps: Record<string, number> = {};
     for (const path of new Set(items.map((i) => i.projectPath))) {

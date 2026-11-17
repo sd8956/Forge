@@ -50,11 +50,21 @@ async function begin(ctx: Awaited<ReturnType<typeof setup>>): Promise<Definition
 
 const view = async (ctx: Awaited<ReturnType<typeof setup>>, projectId: string) => (await ctx.api().request("GET", `/projects/${projectId}/definition`)).body as DefinitionView;
 const stageOf = (v: DefinitionView, stage: string) => v.stages.find((s) => s.stage === stage)!;
-const waitStage = (ctx: Awaited<ReturnType<typeof setup>>, projectId: string, stage: string, status: string) =>
-  waitFor(async () => {
-    const v = await view(ctx, projectId);
-    return stageOf(v, stage).status === status ? v : undefined;
-  }, `${stage} to be ${status}`);
+const waitStage = async (ctx: Awaited<ReturnType<typeof setup>>, projectId: string, stage: string, status: string) => {
+  let last: DefinitionView | undefined;
+  try {
+    return await waitFor(async () => {
+      last = await view(ctx, projectId);
+      return stageOf(last, stage).status === status ? last : undefined;
+    }, `${stage} to be ${status}`);
+  } catch (error) {
+    // Say where it stopped: the stage row and the last thing its session did.
+    const trace = readTrace(ctx.root).slice(-4).map((t) => JSON.stringify({ type: t.type, kind: t.kind, text: t.text ?? t.message }).slice(0, 200));
+    const stepId = last ? stageOf(last, stage).stepId : null;
+    const launch = stepId ? (await ctx.api().step(stepId)).events.filter((e) => e.type === "transition" || e.type === "launch_error").map((e) => JSON.stringify(e.payload).slice(0, 300)) : [];
+    throw new Error(`${String(error)}; stage ${JSON.stringify(last ? stageOf(last, stage) : null)}; launch ${JSON.stringify(launch)}; trace ${JSON.stringify(trace)}`, { cause: error });
+  }
+};
 
 describe("project definition with fake claude", () => {
   it("runs the six stages from an empty repo, each behind the person's gate, and opens the definition PR", async () => {

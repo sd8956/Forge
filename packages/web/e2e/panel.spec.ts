@@ -43,20 +43,28 @@ test("adds a project from the empty panel", async ({ page }) => {
 });
 
 test("shows a run moving across the board live, ending in Awaiting review", async ({ page }) => {
+  // The panel never asks for resources that do not exist (such as a definition of a project defined by hand).
+  const missing: string[] = [];
+  page.on("response", (r) => {
+    if (r.status() === 404) missing.push(r.url());
+  });
   await login(page);
   await api("/runs", { projectPath: state.project, taskId: "TASK-001" });
   const card = page.getByTestId("run-card-TASK-001");
   await expect(card).toBeVisible();
   const prs = page.getByRole("region", { name: "Pull requests" });
-  await expect(prs.getByTestId("run-card-TASK-001")).toBeVisible({ timeout: 40_000 });
+  await expect(prs.getByTestId("pr-row-TASK-001")).toBeVisible({ timeout: 40_000 });
   await expect(prs.getByText("Awaiting review")).toBeVisible();
   await expect(prs.getByText("PR #7")).toBeVisible();
+  // The card stays on the board, in the Review column.
+  await expect(page.getByRole("region", { name: "Review" }).getByTestId("run-card-TASK-001")).toContainText("Awaiting review");
   await page.screenshot({ path: join(shots, "board.png"), fullPage: true });
+  expect(missing).toEqual([]);
 });
 
 test("shows the pipeline, the evidence and the artifacts of a run", async ({ page }) => {
   await login(page);
-  await page.getByTestId("run-card-TASK-001").click();
+  await page.getByRole("region", { name: "Review" }).getByTestId("run-card-TASK-001").click();
   await expect(page.getByRole("heading", { name: "Add and list todos" })).toBeVisible();
   await expect(page.getByText(/Covers FR-001, FR-002 · size S/)).toBeVisible();
   await expect(page.getByRole("heading", { name: "Pipeline" })).toBeVisible();
@@ -104,7 +112,7 @@ test("answers a review comment and shows the thread as answered", async ({ page 
   gh.prs["7"]?.comments.push({ id: 51, login: "sd8956", body: "Please rename createTodo", path: "src/server.js", line: 3, url: "https://github.com/example/demo-project/pull/7#discussion_r51" });
   writeFileSync(state.ghState, JSON.stringify(gh));
   await expect(page.getByRole("region", { name: "Pull requests" }).getByText(/review round 1/)).toBeVisible({ timeout: 40_000 });
-  await page.getByTestId("run-card-TASK-001").click();
+  await page.getByRole("region", { name: "Review" }).getByTestId("run-card-TASK-001").click();
   await page.getByRole("tab", { name: "Review" }).click();
   await expect(page.getByRole("row", { name: /review_comment:51/ }).getByText("Answered")).toBeVisible();
   await expect(page.locator(".timeline").getByText("Review fix")).toBeVisible();

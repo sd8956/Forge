@@ -71,6 +71,7 @@ export const api = {
   startOrchestrator: (projectId: string, prompt?: string) =>
     request<{ session: OrchestratorSession }>(`/projects/${projectId}/orchestrator`, { method: "POST", body: JSON.stringify(prompt ? { prompt } : {}) }),
   stopOrchestrator: (projectId: string) => request<{ stopped: boolean }>(`/projects/${projectId}/orchestrator`, { method: "DELETE" }),
+  definitions: () => request<{ projectId: string; repoPath: string; prUrl: string | null }[]>("/definitions"),
   definition: (projectId: string) => request<DefinitionView>(`/projects/${projectId}/definition`),
   beginDefinition: (path: string, idea: string) => request<DefinitionView>("/definitions", { method: "POST", body: JSON.stringify({ path, idea }) }),
   approveStage: (projectId: string, stage: DefinitionStage) => request<DefinitionView>(`/projects/${projectId}/definition/${stage}/approve`, { method: "POST", body: "{}" }),

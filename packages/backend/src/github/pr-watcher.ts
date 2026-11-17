@@ -65,6 +65,21 @@ export class PrWatcher {
     }
   }
 
+  /**
+   * Whose comments count: everyone with write access to the repository (they can push code anyway), plus the
+   * extra logins of `review.allowed_authors`; `"*"` there means anyone.
+   */
+  private async authors(run: RunRow, slug: string, extra: string[]): Promise<string[]> {
+    if (extra.includes("*")) return ["*"];
+    try {
+      return [...new Set([...(await this.deps.github.writers(slug)), ...extra])];
+    } catch (error) {
+      // Listing collaborators needs push access; without it only the listed authors count.
+      this.deps.runs.recordEvent(run.id, "watcher_writers_unavailable", { error: error instanceof Error ? error.message : String(error) });
+      return extra;
+    }
+  }
+
   private async check(run: RunRow): Promise<void> {
     const project = this.deps.projects.getByPath(run.projectPath) ?? this.deps.projects.upsert(run.projectPath);
     const config = projectConfigSchema.parse(project.config);
@@ -75,7 +90,7 @@ export class PrWatcher {
     const slug = slugFromRemote(project.remote);
     if (!slug || !run.prNumber) return;
     const snapshot = await this.deps.github.snapshot(slug, run.prNumber);
-    const diff = diffSnapshot(snapshot, { known: this.deps.threads.externalIds(run.id), allowedAuthors: config.review.allowed_authors });
+    const diff = diffSnapshot(snapshot, { known: this.deps.threads.externalIds(run.id), allowedAuthors: await this.authors(run, slug, config.review.allowed_authors) });
 
     if (diff.merged) return this.deps.runService.onPrMerged(run.id);
     if (diff.closed) return this.deps.runService.onPrClosed(run.id);

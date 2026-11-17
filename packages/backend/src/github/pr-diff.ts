@@ -36,7 +36,9 @@ export function diffSnapshot(snapshot: PrSnapshot, opts: { known: Set<string>; a
   if (snapshot.state !== "OPEN") return { merged: snapshot.state === "MERGED", closed: snapshot.state === "CLOSED", threads: [] };
 
   const allowed = new Set(opts.allowedAuthors.map((a) => a.toLowerCase()));
-  const fromPerson = (login: string, body: string) => allowed.has(login.toLowerCase()) && body.trim() !== "" && !body.includes(FORGE_REPLY_MARKER);
+  // "*" lets anyone's comments start a review round (opt-in in project.yaml).
+  const allowedAuthor = (login: string) => allowed.has("*") || allowed.has(login.toLowerCase());
+  const fromPerson = (login: string, body: string) => allowedAuthor(login) && body.trim() !== "" && !body.includes(FORGE_REPLY_MARKER);
   const threads: NewThread[] = [];
   const add = (thread: NewThread) => {
     if (!opts.known.has(thread.externalId)) threads.push(thread);

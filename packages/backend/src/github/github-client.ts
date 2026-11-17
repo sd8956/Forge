@@ -9,6 +9,8 @@ export interface GitHubClient {
   snapshot(slug: string, prNumber: number): Promise<PrSnapshot>;
   /** Tail of the failed log of a GitHub Actions run, from a check's details URL. */
   failedCheckLog(slug: string, checkUrl: string | null): Promise<string | null>;
+  /** Logins with write (push) access to the repository. */
+  writers(slug: string): Promise<string[]>;
 }
 
 export class GitHubError extends Error {}
@@ -68,6 +70,13 @@ export class GhCliClient implements GitHubClient {
       issueComments: lines(issueComments, comment).map((c) => ({ ...c, body: c.body ?? "" })),
       reviews: lines(reviews, review).map((c) => ({ ...c, body: c.body ?? "" })),
     };
+  }
+
+  async writers(slug: string): Promise<string[]> {
+    const out = await this.gh(["api", `repos/${slug}/collaborators`, "--paginate", "--jq", ".[] | {login, push: .permissions.push}"]);
+    return lines(out, z.object({ login: z.string(), push: z.boolean().nullable() }))
+      .filter((c) => c.push)
+      .map((c) => c.login);
   }
 
   async failedCheckLog(slug: string, checkUrl: string | null): Promise<string | null> {

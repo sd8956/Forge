@@ -10,12 +10,17 @@ export interface QueueItem {
   unmergedDeps: string[];
 }
 
-/** A run that holds a session slot (queued, running or needs_human). */
+/**
+ * A run that holds its modules: open runs (queued, running, needs_human) also hold a session slot; a run waiting
+ * for review (`slot: false`) holds its modules until the merge, so two PRs never change the same module.
+ */
 export interface ActiveRun {
   runId: string;
   projectPath: string;
   taskId: string;
   modules: string[];
+  /** Defaults to true. */
+  slot?: boolean;
 }
 
 /** A run waiting for review that has unhandled feedback. */
@@ -76,7 +81,8 @@ export function schedule(input: SchedulerInput): SchedulerDecision {
     return decision;
   }
 
-  let busy = input.active.length;
+  const slotted = input.active.filter((a) => a.slot !== false);
+  let busy = slotted.length;
   const slotWait = () => `Waiting for a slot (${Math.min(busy, input.maxConcurrency)} of ${input.maxConcurrency} sessions busy)`;
   for (const r of reviews) {
     if (busy < input.maxConcurrency) {
@@ -86,8 +92,8 @@ export function schedule(input: SchedulerInput): SchedulerDecision {
   }
 
   const perProject = new Map<string, number>();
-  for (const a of input.active) perProject.set(a.projectPath, (perProject.get(a.projectPath) ?? 0) + 1);
-  const holders = input.active.map((a) => ({ projectPath: a.projectPath, taskId: a.taskId, modules: a.modules.map(norm) }));
+  for (const a of slotted) perProject.set(a.projectPath, (perProject.get(a.projectPath) ?? 0) + 1);
+  const holders = input.active.map((a) => ({ projectPath: a.projectPath, taskId: a.taskId, modules: a.modules.map(norm), reviewing: a.slot === false }));
   for (const i of items) {
     if (i.unmergedDeps.length) {
       decision.waits[i.id] = `Waits for ${i.unmergedDeps.join(", ")} merge`;
@@ -100,9 +106,9 @@ export function schedule(input: SchedulerInput): SchedulerDecision {
     const modules = i.modules.map(norm);
     const conflict = holders
       .filter((h) => h.projectPath === i.projectPath)
-      .flatMap((h) => h.modules.filter((m) => modules.some((mine) => overlaps(mine, m))).map((m) => ({ m, task: h.taskId })))[0];
+      .flatMap((h) => h.modules.filter((m) => modules.some((mine) => overlaps(mine, m))).map((m) => ({ m, task: h.taskId, reviewing: h.reviewing })))[0];
     if (conflict) {
-      decision.waits[i.id] = `Module busy: ${conflict.m} (${conflict.task})`;
+      decision.waits[i.id] = `Module busy: ${conflict.m} (${conflict.task}${conflict.reviewing ? ", waiting for review" : ""})`;
       continue;
     }
     if (busy >= input.maxConcurrency) {
@@ -117,7 +123,7 @@ export function schedule(input: SchedulerInput): SchedulerDecision {
     }
     perProject.set(i.projectPath, mine + 1);
     decision.launches.push(i.id);
-    holders.push({ projectPath: i.projectPath, taskId: i.taskId, modules });
+    holders.push({ projectPath: i.projectPath, taskId: i.taskId, modules, reviewing: false });
     busy++;
   }
   return decision;

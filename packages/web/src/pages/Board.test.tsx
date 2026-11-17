@@ -37,7 +37,9 @@ describe("columnOf", () => {
   it("places open runs on their current step and closed runs on their outcome", () => {
     expect(columnOf(run("TASK-001", "running", "security", step("security", "running")))).toBe("security");
     expect(columnOf(run("TASK-001", "running", "e2e", step("security", "done")))).toBe("e2e");
-    expect(columnOf(run("TASK-001", "waiting_review", "pr", step("pr", "done")))).toBe("awaiting_review");
+    // A PR waiting for review, and its review rounds, stay on the board in the Review column.
+    expect(columnOf(run("TASK-001", "waiting_review", "pr", step("pr", "done")))).toBe("review");
+    expect(columnOf(run("TASK-001", "running", "review_fix", step("review_fix", "running"), { mode: "review" }))).toBe("review");
     expect(columnOf(run("TASK-001", "done", "pr", step("pr", "done")))).toBe("done");
     expect(columnOf(run("TASK-001", "cancelled", "pr", null))).toBe("closed");
   });
@@ -54,6 +56,10 @@ describe("Board", () => {
     expect(within(development).getByText("Add and list todos")).toBeTruthy();
     expect(within(development).getByText("Needs attention")).toBeTruthy();
     expect(within(development).getByText(/2 prompts/)).toBeTruthy();
+    const review = within(screen.getByRole("region", { name: "Review" }));
+    expect(review.getByText("Health endpoint")).toBeTruthy();
+    expect(review.getByText("Awaiting review")).toBeTruthy();
+    expect(review.getByText("PR #4")).toBeTruthy();
     const prs = within(screen.getByRole("region", { name: "Pull requests" }));
     expect(prs.getByText("PR #4")).toBeTruthy();
     expect(prs.getByText("Awaiting review")).toBeTruthy();

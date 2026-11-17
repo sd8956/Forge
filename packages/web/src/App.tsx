@@ -89,7 +89,11 @@ export function App() {
     void api.backlog(project.id).then(setBacklog, () => setBacklog([]));
     void api.plans(project.id).then(setPlans, () => setPlans([]));
     void api.orchestrator(project.id).then((r) => setOrchestrator(r.session), () => setOrchestrator(null));
-    void api.definition(project.id).then(setDefinition, () => setDefinition(null));
+    // Only projects defined in Forge have a definition; asking for others would just 404.
+    void api
+      .definitions()
+      .then((list) => (list.some((d) => d.projectId === project.id) ? api.definition(project.id) : null))
+      .then(setDefinition, () => setDefinition(null));
   }, [project, now]);
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 10_000);
