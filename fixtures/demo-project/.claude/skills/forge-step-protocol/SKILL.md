@@ -47,6 +47,17 @@ their fix. Not a summary of the step. Every observation:
 - goes to this project (the default; never another project),
 - ends its content with a line `Ref: <TASK>/<step>`, for example `Ref: TASK-001/plan`.
 
+What is worth saving, by step:
+
+| Step | Save | Example title |
+| --- | --- | --- |
+| plan | How you read an ambiguous requirement; conventions the plan fixes | "Blank titles count as empty (FR-001)" |
+| design | API, error and UI conventions the next tasks must reuse | "API errors are { error } with 4xx" |
+| development | Test seams, non-obvious fixes, gotchas of the stack | "Server tests start the app on port 0" |
+| security | Confirmed vulnerability patterns and their fix | "Raw Node responses: never reflect query data as HTML" |
+| e2e | Selector, timing or evidence gotchas | "Each e2e case needs a fresh server for an empty store" |
+| pr | Rarely anything; skip unless the push or gh needed a workaround | — |
+
 Skip this when there is nothing reusable.
 
 ## 6. Report
@@ -70,6 +81,8 @@ Every permission prompt stops the pipeline until a person answers it. To avoid t
 - Read files with Read, Grep and Glob, not with `cat`, `find` or scripts.
 - Run Bash only for the commands your step needs, one simple command per call, with literal values:
   no shell variables, no `$(...)`, no `cd` before a command, no pipes into scripts.
+- The backend enforces these rules: a denied tool call comes back with a reason. Do what the reason says
+  (for example, use Write instead of a heredoc) and continue; do not retry the same call.
 
 ## Never
 
