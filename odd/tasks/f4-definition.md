@@ -25,14 +25,15 @@ Objective: from an empty repo and an idea, run the 6 definition stages, each beh
 
 | ID | Specs | Route | Status | Commit |
 | --- | --- | --- | --- | --- |
-| T1 | S2, S4 | inline | pending | |
-| T2 | S1, S3, S5, S6 | inline | pending | |
-| T3 | S1 | inline | pending | |
-| T4 | S7 | inline | pending | |
-| T5 | S8 | inline | pending | |
-| T6 | S9 | inline | pending | |
-| T7 | S9, S10 | inline | pending | |
+| T1 | S2, S4 | inline | done | e43962a |
+| T2 | S1, S3, S5, S6 | inline | done | ea7af28, c2d26b8 |
+| T3 | S1 | inline | done | ea7af28 |
+| T4 | S7 | inline | done | 1cac540 |
+| T5 | S8 | inline | done | a591c23 |
+| T6 | S9 | inline | done | ea7af28, a591c23 |
+| T7 | S9, S10 | inline | in progress | |
 
 ## Log
 
 - L1 (2026-11-17) User: "mezclado que sigue?" → F4 plan proposed. L2 User: "si apruebo el plan, ya cree el repo https://github.com/sd8956/forge-definition-sandbox".
+- L3 T1-T6 done inline. Findings: a `description` with ": " broke an agent's YAML frontmatter (fixture test now parses every agent); the hand-written sandbox showed a task may cover only an NFR; an NFR may be measurable by a universal rule; a new repo has no base branch on GitHub, so Forge pushes it before the PR (c2d26b8). 367 tests + 11 Playwright green. T7: cloned sd8956/forge-definition-sandbox into .sandbox/forge-definition-sandbox (empty, HEAD set to main), backend restarted.
