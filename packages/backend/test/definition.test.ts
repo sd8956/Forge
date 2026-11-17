@@ -59,10 +59,10 @@ const waitStage = async (ctx: Awaited<ReturnType<typeof setup>>, projectId: stri
     }, `${stage} to be ${status}`);
   } catch (error) {
     // Say where it stopped: the stage row and the last thing its session did.
-    const trace = readTrace(ctx.root).slice(-4).map((t) => `${String(t.type)} ${String(t.kind ?? "")} ${String(t.text ?? t.message ?? "")}`.slice(0, 200));
+    const trace = readTrace(ctx.root).slice(-4).map((t) => JSON.stringify({ type: t.type, kind: t.kind, text: t.text ?? t.message }).slice(0, 200));
     const stepId = last ? stageOf(last, stage).stepId : null;
     const launch = stepId ? (await ctx.api().step(stepId)).events.filter((e) => e.type === "transition" || e.type === "launch_error").map((e) => JSON.stringify(e.payload).slice(0, 300)) : [];
-    throw new Error(`${String(error)}; stage ${JSON.stringify(last ? stageOf(last, stage) : null)}; launch ${JSON.stringify(launch)}; trace ${JSON.stringify(trace)}`);
+    throw new Error(`${String(error)}; stage ${JSON.stringify(last ? stageOf(last, stage) : null)}; launch ${JSON.stringify(launch)}; trace ${JSON.stringify(trace)}`, { cause: error });
   }
 };
 
