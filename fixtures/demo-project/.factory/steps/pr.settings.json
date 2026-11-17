@@ -13,7 +13,8 @@
       "Bash(git push origin:*)",
       "Bash(gh pr create:*)",
       "Bash(gh pr view:*)",
-      "Bash(git rev-parse:*)"
+      "Bash(git rev-parse:*)",
+      "Bash(gh pr edit:*)"
     ],
     "deny": [
       "Bash(git push --force:*)",

@@ -79,7 +79,7 @@ describe("PR watcher and review loop with fake claude and fake gh", () => {
     const reviewed = await waitFor(async () => {
       const run = await ctx.api.run(id);
       return run.status === "waiting_review" && run.reviewRound === 1 ? run : undefined;
-    }, "a review round to finish", 30_000);
+    }, "a review round to finish", 60_000);
 
     expect(steps(reviewed).slice(-4)).toEqual(["review_fix#1:done", "security#2:done", "e2e#2:done", "pr#2:done"]);
     expect(reviewed).toMatchObject({ mode: "review", reviewRound: 1 });
@@ -123,7 +123,7 @@ describe("PR watcher and review loop with fake claude and fake gh", () => {
     const run = await waitFor(async () => {
       const r = await ctx.api.run(id);
       return r.reviewRound === 1 && r.status === "waiting_review" ? r : undefined;
-    }, "check review round", 30_000);
+    }, "check review round", 60_000);
     expect(run.prThreads).toEqual([expect.objectContaining({ id: "check:check@abc1234", kind: "check", handled: true })]);
     expect(run.prThreads[0]?.body).toContain("npm ERR! test failed: TC-03");
   }, 60_000);
@@ -143,9 +143,12 @@ describe("PR watcher and review loop with fake claude and fake gh", () => {
     const { id } = await ctx.api.startRun(ctx.project);
     await ctx.api.waitForRun(id, "waiting_review");
     ctx.gh.edit((s) => s.prs["7"]?.comments.push(comment(21, "sd8956", "First round")));
-    await waitFor(async () => ((await ctx.api.run(id)).reviewRound === 1 && (await ctx.api.run(id)).status === "waiting_review") || undefined, "round 1", 30_000);
+    await waitFor(async () => {
+      const r = await ctx.api.run(id);
+      return (r.reviewRound === 1 && r.status === "waiting_review") || undefined;
+    }, "round 1", 60_000);
     ctx.gh.edit((s) => s.prs["7"]?.comments.push(comment(22, "sd8956", "Second round")));
     const run = await ctx.api.waitForRun(id, "needs_human", 20_000);
     expect(run).toMatchObject({ exitReason: "review_rounds_exhausted:1", reviewRound: 2 });
-  }, 90_000);
+  }, 120_000);
 });

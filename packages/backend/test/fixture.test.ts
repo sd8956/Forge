@@ -25,6 +25,11 @@ describe("demo-project fixture contract", () => {
     expect(pipeline.review).toMatchObject({ max_rounds: 3, fix: { id: "review_fix", agent: "forge-review-fixer" }, then: ["security", "e2e", "pr"] });
   });
 
+  it("lets the pr step update an existing PR without a prompt", () => {
+    const pr = steps.find((s) => s.step.id === "pr");
+    expect(pr?.settings.permissions.allow).toEqual(expect.arrayContaining(["Bash(gh pr create:*)", "Bash(gh pr edit:*)"]));
+  });
+
   it.each(steps.map((s) => [s.step.id, s] as const))("%s: can never merge a PR", (_id, { settings }) => {
     expect(settings.permissions.deny).toEqual(expect.arrayContaining(["Bash(gh pr merge:*)", "Bash(gh api -X PUT:*)"]));
   });

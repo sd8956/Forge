@@ -35,10 +35,12 @@ Objective: operate runs from the browser and close the PR loop (comment → fix 
 | T6 | S9 | inline | done | 081fd71, 2ee7a05, b0e9b23 |
 | T7 | S3 | inline | done | cf4412b |
 | T8 | S10 | inline | done | f9dbd60, eeb3d60, b48bac1 |
-| T9 | S10, S11, S12 | inline | pending | |
+| T9 | S10, S11, S12 | inline | done | docs/runs/f2.md, sandbox 11c2858, 3260556 |
 
 ## Log
 
 - L1 (2026-11-17) User: "si proponlo tu" → plan proposed; L2 User: "Si apruebo el plan" (includes S12 sandbox actions).
 - L3 (2026-11-17) T1–T8 done: 261 unit/integration tests and 7 Playwright panel tests green (4 consecutive runs). Found and fixed: refused WebSocket upgrades kept sockets open and blocked shutdown; onPrMerged marked done before cleanup; fake gh overwrote test edits (harness race); wait margins too tight under load. Panel UX from screenshots: Add-project form for an empty backend, task titles in the run detail, PRs listed apart from the step board.
 - Next: T9 real runs (sandbox CI workflow, TASK-003 health endpoint via panel, review fix on sandbox PR #1 from a user comment).
+- L4 (2026-11-17) Real runs: TASK-003 → sandbox PR #3 with 1 prompt (F1: 12); user review comment on sandbox PR #1 → round 1 → reply in thread, re-verification, push, body update → waiting_review; restart did not reprocess; user merged → archive, worktree removed, Engram #126 TASK-001/review, run done. Exit gate passed; report in docs/runs/f2.md, ADR 0007.
+- Next: user decides push/PR of feat/f2-panel-and-review.

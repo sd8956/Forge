@@ -69,6 +69,10 @@ const behaviour = script[`${taskId}:${kind}`]?.[attempt - 1] ?? script[kind]?.[a
 // Something on the screen for the terminal bridge, and a record of what a person types.
 process.stdout.write(`fake claude ready: ${kind} attempt ${attempt}\r\n`);
 process.stdin.on("data", (chunk) => trace("stdin", { data: chunk.toString() }));
+// When tmux kills the session the pty goes away: reading or writing it fails with EIO. Without these
+// handlers that error would crash the fake before it sends SessionEnd, as the real CLI does.
+process.stdin.on("error", () => undefined);
+process.stdout.on("error", () => undefined);
 
 trace("started", {
   agent: flags["--agent"],
