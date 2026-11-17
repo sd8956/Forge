@@ -28,6 +28,11 @@ describe("guardTool: Bash commands that stopped the F1 runs are denied with a co
     ["unquoted_glob", "find . -name *.js", "Glob"],
     ["unquoted_glob", "git add src/*.js", "quote"],
     ["unquoted_glob", "sort data/*.csv", "quote"],
+    // F3 real run: a variable in front of the command, and a value outside the worktree.
+    ["env_prefix", "EVIDENCE_DIR=.factory/runs/TASK-005/e2e/1/evidence npx playwright test e2e/escape.spec.js", "make e2e EVIDENCE_DIR="],
+    ["env_prefix", "git status && CI=1 make unit", "argument"],
+    ["outside_worktree", "make e2e EVIDENCE_DIR=/tmp/claude-1000/e2e-ev", "worktree"],
+    ["outside_worktree", "node --test --test-reporter-destination=/tmp/out.txt", "worktree"],
     ["outside_worktree", "ls ~/.claude/skills .claude/skills 2>/dev/null", "worktree"],
     ["outside_worktree", "cat /etc/passwd", "worktree"],
   ];
@@ -61,6 +66,8 @@ describe("guardTool: commands that ran without a prompt stay allowed", () => {
     `git commit -m "docs: explain a > b and $HOME in prose"`.replace("$HOME", "home"),
     `ls ${WT}/src`,
     "find . -name '*.js'",
+    "make e2e EVIDENCE_DIR=.factory/runs/TASK-005/e2e/1/evidence",
+    `make e2e EVIDENCE_DIR=${WT}/.factory/runs/TASK-005/e2e/1/evidence`,
     `find e2e -name "*.spec.js" -type f`,
     "ls src/*.js",
     "wc -l src/*.js",
