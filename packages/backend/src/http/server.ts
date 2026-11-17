@@ -265,6 +265,34 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     return runEvidence(steps, () => root);
   });
 
+  /** The Memory panel: what the project's steps saved in Engram, read-only, each linked to its task's run. */
+  app.get("/projects/:projectId/memories", async (request, reply) => {
+    const params = z.object({ projectId: z.uuid() }).safeParse(request.params);
+    const query = z
+      .object({ q: z.string().trim().max(200).optional(), ref: z.string().regex(/^TASK-\d{3,}(\/[a-z][a-z0-9-]*)?$/).optional() })
+      .safeParse(request.query);
+    if (!params.success) return badRequest(reply, params.error);
+    if (!query.success) return badRequest(reply, query.error);
+    const project = deps.projects.get(params.data.projectId);
+    if (!project) return reply.code(404).send({ error: "unknown_project" });
+    const name = deps.memoryProject(project.repoPath);
+    try {
+      const found = query.data.q ? await deps.memory.search(name, query.data.q, 50) : await deps.memory.list(name, 200);
+      const ref = query.data.ref;
+      const items = found.filter((m) => !ref || m.ref === ref || m.ref?.startsWith(`${ref}/`));
+      const runs = deps.runs.list().filter((r) => r.projectPath === project.repoPath);
+      return {
+        available: true,
+        items: items.map((m) => {
+          const taskId = m.ref?.split("/")[0];
+          return { ...m, runId: taskId ? (runs.filter((r) => r.taskId === taskId).at(-1)?.id ?? null) : null };
+        }),
+      };
+    } catch (error) {
+      return { available: false, error: error instanceof Error ? error.message : String(error), items: [] };
+    }
+  });
+
   app.get("/runs/:runId", async (request, reply) => {
     const params = runIdParams.safeParse(request.params);
     if (!params.success) return badRequest(reply, params.error);

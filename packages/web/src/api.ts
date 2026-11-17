@@ -71,6 +71,12 @@ export const api = {
   startOrchestrator: (projectId: string, prompt?: string) =>
     request<{ session: OrchestratorSession }>(`/projects/${projectId}/orchestrator`, { method: "POST", body: JSON.stringify(prompt ? { prompt } : {}) }),
   stopOrchestrator: (projectId: string) => request<{ stopped: boolean }>(`/projects/${projectId}/orchestrator`, { method: "DELETE" }),
+  memories: (projectId: string, filter: { q?: string; ref?: string } = {}) => {
+    const params = new URLSearchParams();
+    if (filter.q) params.set("q", filter.q);
+    if (filter.ref) params.set("ref", filter.ref);
+    return request<MemoryList>(`/projects/${projectId}/memories${params.size ? `?${params.toString()}` : ""}`);
+  },
   definitions: () => request<{ projectId: string; repoPath: string; prUrl: string | null }[]>("/definitions"),
   definition: (projectId: string) => request<DefinitionView>(`/projects/${projectId}/definition`),
   beginDefinition: (path: string, idea: string) => request<DefinitionView>("/definitions", { method: "POST", body: JSON.stringify({ path, idea }) }),
@@ -95,4 +101,20 @@ export interface OrchestratorSession {
 /** URL of a file in a run's handoff folder (screenshots, reports, output.md). */
 export function runFileUrl(runId: string, path: string): string {
   return `/runs/${runId}/files?path=${encodeURIComponent(path)}`;
+}
+
+export interface MemoryItem {
+  id: number;
+  title: string;
+  type: string;
+  content: string;
+  createdAt: string;
+  ref: string | null;
+  runId: string | null;
+}
+
+export interface MemoryList {
+  available: boolean;
+  error?: string;
+  items: MemoryItem[];
 }

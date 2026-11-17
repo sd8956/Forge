@@ -15,6 +15,7 @@ export interface E2eState {
   ghState: string;
   pid: number;
   socket: string;
+  engramPid: number;
 }
 
 /** Starts `forge serve` against a throwaway copy of the fixture, with fake claude and fake gh. */
@@ -46,6 +47,9 @@ export default async function globalSetup(): Promise<void> {
   writeFileSync(ghState, JSON.stringify({ login: "sd8956", prs: { "7": { state: "OPEN", headRefOid: "abc1234", statusCheckRollup: [], comments: [], issueComments: [], reviews: [], body: "" } }, logs: {} }));
 
   const port = 7600 + Math.floor(Math.random() * 300);
+  const engramPort = port + 1000;
+  const engram = spawn(process.execPath, [join(import.meta.dirname, "fake-engram.mjs"), String(engramPort)], { stdio: "ignore", detached: true });
+  engram.unref();
   const socket = `forge-e2e-${port}`;
   const backendTest = join(REPO, "packages", "backend", "test");
   const env = {
@@ -56,7 +60,7 @@ export default async function globalSetup(): Promise<void> {
     FORGE_CLAUDE_BIN: join(backendTest, "fake-claude", "fake-claude.mjs"),
     FORGE_GH_BIN: join(backendTest, "fake-gh", "fake-gh.mjs"),
     FORGE_CHECK_TRUST: "0",
-    FORGE_ENGRAM_URL: "http://127.0.0.1:9",
+    FORGE_ENGRAM_URL: `http://127.0.0.1:${engramPort}`,
     FORGE_PR_POLL_MS: "500",
     FORGE_CLOSE_GRACE_MS: "100",
     FORGE_SWEEP_INTERVAL_MS: "300",
@@ -78,7 +82,7 @@ export default async function globalSetup(): Promise<void> {
     await new Promise((r) => setTimeout(r, 100));
   }
   const token = readFileSync(join(root, "home", "token"), "utf8").trim();
-  const state: E2eState = { url, token, project, newApp, root, ghState, pid: child.pid ?? 0, socket };
+  const state: E2eState = { url, token, project, newApp, root, ghState, pid: child.pid ?? 0, socket, engramPid: engram.pid ?? 0 };
   execFileSync("mkdir", ["-p", join(REPO, ".forge-e2e")]);
   writeFileSync(STATE_FILE, JSON.stringify(state));
 }

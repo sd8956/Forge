@@ -42,6 +42,13 @@ describe("EngramAdapter", () => {
     expect(memories.map((m) => m.ref)).toEqual(["TASK-001/plan"]);
   });
 
+  it("lists a project's recent memories, never other projects", async () => {
+    const { calls, fetchImpl } = stub([observation(1, "Ref: TASK-001/plan"), observation(2, "x", "other-project")]);
+    const memories = await new EngramAdapter("http://e", fetchImpl).list("demo-project", 200);
+    expect(calls).toEqual(["http://e/observations?project=demo-project&limit=200"]);
+    expect(memories.map((m) => m.id)).toEqual([1]);
+  });
+
   it("reports an unreachable or failing Engram as unavailable", async () => {
     const down = (() => Promise.reject(new Error("ECONNREFUSED"))) as typeof fetch;
     await expect(new EngramAdapter("http://e", down).search("p", "q")).rejects.toThrow(MemoryUnavailableError);

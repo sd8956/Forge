@@ -261,3 +261,25 @@ test("defines a new project stage by stage: changes, an isolated prototype appro
   await expect(page.getByText("Definition merged.")).toBeVisible({ timeout: 20_000 });
   await expect(page.getByRole("link", { name: "Plan the backlog in Execution" })).toBeVisible();
 });
+
+test("shows what the steps saved in Engram, filtered by task or step, with a link to the run", async ({ page }) => {
+  await login(page);
+  await page.getByRole("link", { name: "Memory" }).click();
+  await expect(page.getByRole("heading", { name: "Memory" })).toBeVisible();
+  const list = page.getByRole("region", { name: "Memories" }).or(page.getByLabel("Memories"));
+  await expect(list.getByText("Todo store seam")).toBeVisible();
+  await expect(list.getByText("E2E evidence layout")).toBeVisible();
+  await page.getByLabel("Task or step").fill("TASK-001/review");
+  await expect(list.getByText("Reviewers ask for addTodo naming")).toBeVisible();
+  await expect(list.getByText("Todo store seam")).toBeHidden();
+  await list.getByText("Reviewers ask for addTodo naming").click();
+  await expect(page.getByText("Rename createTodo to addTodo.")).toBeVisible();
+  await page.getByRole("link", { name: "Open the run of TASK-001" }).click();
+  await expect(page.getByRole("heading", { name: "Add and list todos" })).toBeVisible();
+  await page.goBack();
+  await page.getByLabel("Task or step").fill("");
+  await page.getByLabel("Search").fill("evidence");
+  await expect(list.getByText("E2E evidence layout")).toBeVisible();
+  await expect(list.getByText("Todo store seam")).toBeHidden();
+  await page.screenshot({ path: join(shots, "memory.png"), fullPage: true });
+});

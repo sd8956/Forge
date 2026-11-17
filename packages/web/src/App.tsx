@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api, UnauthorizedError, type BacklogTask, type DefinitionView, type OrchestratorSession, type PlanView, type Project, type QueueView, type RunSummary } from "./api.js";
 import { factoryTree } from "./definition.js";
 import { DefinitionPage, StartDefinition } from "./pages/Definition.js";
+import { MemoryPage } from "./pages/Memory.js";
 import { Icon } from "./components/Icon.js";
 import { UsageWidget } from "./components/UsageWidget.js";
 import { Board } from "./pages/Board.js";
@@ -112,6 +113,7 @@ export function App() {
 
   const runId = /^#\/runs\/([0-9a-f-]{36})/.exec(route)?.[1];
   const onDefinition = route.startsWith("#/definition");
+  const onMemory = route.startsWith("#/memory");
   const started = (view: DefinitionView) => {
     setProjectId(view.projectId);
     setDefinition(view);
@@ -138,8 +140,9 @@ export function App() {
           </select>
         </label>
         <nav className="nav" aria-label="Main">
-          <a href="#/" className={onDefinition ? "" : "active"}><Icon name="board" /> Execution</a>
+          <a href="#/" className={onDefinition || onMemory ? "" : "active"}><Icon name="board" /> Execution</a>
           <a href="#/definition" className={onDefinition ? "active" : ""}><Icon name="pencil" /> Definition</a>
+          <a href="#/memory" className={onMemory ? "active" : ""}><Icon name="memory" /> Memory</a>
         </nav>
         {onDefinition && definition ? (
           <div className="factory-tree" aria-label=".factory files">
@@ -153,7 +156,9 @@ export function App() {
       </aside>
       <main className="main">
         {error ? <p role="alert">{error}</p> : null}
-        {onDefinition ? (
+        {onMemory && project ? (
+          <MemoryPage project={project} />
+        ) : onDefinition ? (
           project && definition ? (
             <DefinitionPage project={project} view={definition} onChanged={(v) => { setDefinition(v); refresh(); }} />
           ) : definition === undefined && project ? (

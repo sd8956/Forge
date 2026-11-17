@@ -8,6 +8,8 @@ const PATHS: Record<string, string> = {
   stop: "M6 6h12v12H6z",
   external: "M14 4h6v6M20 4l-9 9M18 14v5H5V6h5",
   pencil: "M4 20h4L19 9l-4-4L4 16zM13 7l4 4",
+  memory: "M4 6c0-1.7 3.6-3 8-3s8 1.3 8 3-3.6 3-8 3-8-1.3-8-3zM4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3",
+  settings: "M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19 12h2M3 12h2M12 3v2M12 19v2M17 7l1.5-1.5M5.5 18.5L7 17M17 17l1.5 1.5M5.5 5.5L7 7",
 };
 
 export function Icon({ name, size = 16, label }: { name: keyof typeof PATHS; size?: number; label?: string }) {

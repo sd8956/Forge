@@ -19,6 +19,8 @@ export interface MemoryAdapter {
   search(project: string, query: string, limit?: number): Promise<Memory[]>;
   /** Memories whose content carries a `TASK-xxx/<step>` reference to this task. */
   listByTask(project: string, taskId: string): Promise<Memory[]>;
+  /** The project's most recent memories. */
+  list(project: string, limit?: number): Promise<Memory[]>;
   /** Saves one observation in the project, under a backend-owned session. */
   save(project: string, observation: { title: string; type: string; content: string }): Promise<number>;
 }
@@ -46,6 +48,10 @@ export class EngramAdapter implements MemoryAdapter {
 
   async search(project: string, query: string, limit = 10): Promise<Memory[]> {
     return this.get("/search", { q: query, project, limit: String(limit) });
+  }
+
+  async list(project: string, limit = 200): Promise<Memory[]> {
+    return this.get("/observations", { project, limit: String(limit) });
   }
 
   async listByTask(project: string, taskId: string): Promise<Memory[]> {
