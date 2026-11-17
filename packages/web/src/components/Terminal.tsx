@@ -1,19 +1,23 @@
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal as XTerm } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+
+export type TerminalState = "connecting" | "open" | "closed";
 
 /**
- * Live view of a step's tmux session. Read-only by default; taking control is
- * an explicit action, recorded by the backend, that forwards keystrokes.
+ * A tmux session in an xterm, over the backend's terminal WebSocket. In view
+ * mode the backend attaches read-only and drops input; in control mode
+ * keystrokes (and `send`) reach the session.
  */
-export function Terminal({ stepId, session }: { stepId: string; session: string }) {
+export function useTmuxTerminal(path: string, control: boolean) {
   const container = useRef<HTMLDivElement>(null);
-  const [control, setControl] = useState(false);
-  const [state, setState] = useState<"connecting" | "open" | "closed">("connecting");
+  const socketRef = useRef<WebSocket | null>(null);
+  const [state, setState] = useState<TerminalState>("connecting");
 
   useEffect(() => {
     if (!container.current) return;
+    setState("connecting");
     const term = new XTerm({
       convertEol: false,
       cursorBlink: control,
@@ -26,7 +30,8 @@ export function Terminal({ stepId, session }: { stepId: string; session: string 
     term.loadAddon(fit);
     term.open(container.current);
     fit.fit();
-    const socket = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws/terminal/${stepId}?mode=${control ? "control" : "view"}`);
+    const socket = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}${path}?mode=${control ? "control" : "view"}`);
+    socketRef.current = socket;
     const resize = () => {
       fit.fit();
       if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: "resize", cols: term.cols, rows: term.rows }));
@@ -48,9 +53,29 @@ export function Terminal({ stepId, session }: { stepId: string; session: string 
       window.removeEventListener("resize", resize);
       input.dispose();
       socket.close();
+      socketRef.current = null;
       term.dispose();
     };
-  }, [stepId, control]);
+  }, [path, control]);
+
+  /** Types text into the session, as if the person typed it. */
+  const send = useCallback((data: string) => {
+    const socket = socketRef.current;
+    if (!socket || socket.readyState !== WebSocket.OPEN) return false;
+    socket.send(JSON.stringify({ type: "input", data }));
+    return true;
+  }, []);
+
+  return { container, state, send };
+}
+
+/**
+ * Live view of a step's tmux session. Read-only by default; taking control is
+ * an explicit action, recorded by the backend, that forwards keystrokes.
+ */
+export function Terminal({ stepId, session }: { stepId: string; session: string }) {
+  const [control, setControl] = useState(false);
+  const { container, state } = useTmuxTerminal(`/ws/terminal/${stepId}`, control);
 
   return (
     <div>

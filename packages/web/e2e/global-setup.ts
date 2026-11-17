@@ -54,7 +54,7 @@ export default async function globalSetup(): Promise<void> {
     FORGE_SWEEP_INTERVAL_MS: "300",
     FAKE_GH_STATE: ghState,
     FAKE_GH_BIN: join(backendTest, "fake-gh", "fake-gh.mjs"),
-    FAKE_CLAUDE_SCRIPT: JSON.stringify({ "TASK-003:plan": ["hang"] }),
+    FAKE_CLAUDE_SCRIPT: JSON.stringify({ "TASK-003:plan": ["hang", "hang"] }),
     FAKE_CLAUDE_TRACE: join(root, "trace.jsonl"),
     FAKE_CLAUDE_TRANSCRIPT_DIR: root,
   };

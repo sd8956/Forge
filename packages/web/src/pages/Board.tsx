@@ -1,7 +1,9 @@
 import { useState } from "react";
-import type { BacklogTask, Project, RunSummary } from "../api.js";
+import type { BacklogTask, OrchestratorSession, PlanView, Project, QueueView, RunSummary } from "../api.js";
 import { api } from "../api.js";
 import { Badge } from "../components/Badge.js";
+import { OrchestratorPane } from "../components/OrchestratorPane.js";
+import { PlanCard } from "../components/PlanCard.js";
 import { duration, runStatus, STEP_LABELS, stepStatus } from "../status.js";
 
 const STEP_COLUMNS = ["plan", "design", "development", "security", "e2e", "pr", "review_fix"] as const;
@@ -41,7 +43,18 @@ function RunCard({ run, task, now }: { run: RunSummary; task: BacklogTask | unde
   );
 }
 
-export function Board({ project, runs, backlog, now, onChanged }: { project: Project; runs: RunSummary[]; backlog: BacklogTask[]; now: number; onChanged: () => void }) {
+export interface BoardProps {
+  project: Project;
+  runs: RunSummary[];
+  backlog: BacklogTask[];
+  now: number;
+  onChanged: () => void;
+  queue?: QueueView | null;
+  plans?: PlanView[];
+  orchestrator?: OrchestratorSession | null;
+}
+
+export function Board({ project, runs, backlog, now, onChanged, queue = null, plans = [], orchestrator = null }: BoardProps) {
   const [error, setError] = useState<string | null>(null);
   const mine = runs.filter((r) => r.projectPath === project.repoPath);
   const latestPerTask = new Map<string, RunSummary>();
@@ -54,16 +67,21 @@ export function Board({ project, runs, backlog, now, onChanged }: { project: Pro
   const columns = STEP_COLUMNS.map((id) => ({ id, label: STEP_LABELS[id] ?? id }));
   const prRuns = shown.filter((r) => ["awaiting_review", "done"].includes(columnOf(r)));
 
-  const launch = async (taskId: string) => {
+  const act = async (action: () => Promise<unknown>) => {
     setError(null);
     try {
-      await api.startRun(project.repoPath, taskId);
+      await action();
       onChanged();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
   };
+  const launch = (taskId: string) => act(() => api.startRun(project.repoPath, taskId));
 
+  const proposed = plans.find((p) => p.status === "proposed");
+  const queuedTasks = (queue?.queued ?? []).filter((t) => t.projectPath === project.repoPath);
+  const queuedIds = new Set(queuedTasks.map((t) => t.taskId));
+  const sessions = queue ? queue.active.length : shown.filter((r) => OPEN.has(r.status)).length;
   const active = shown.filter((r) => r.status === "running").length;
   const attention = shown.filter((r) => r.status === "needs_human").length;
   const openPrs = shown.filter((r) => r.status === "waiting_review").length;
@@ -75,15 +93,32 @@ export function Board({ project, runs, backlog, now, onChanged }: { project: Pro
           <h1>Execution</h1>
           <div className="muted">{project.name} · {project.defaultBranch}</div>
         </div>
+        <div className="actions">
+          {queue?.paused ? (
+            <button type="button" className="btn" onClick={() => void act(() => api.resumeQueue())}>Resume queue</button>
+          ) : (
+            <button type="button" className="btn" onClick={() => void act(() => api.pauseQueue())}>Pause queue</button>
+          )}
+          <button type="button" className="btn primary" onClick={() => void act(() => api.startOrchestrator(project.id))}>Launch tasks</button>
+        </div>
       </div>
 
+      {queue?.paused ? (
+        <div className="card paused-banner" role="status">
+          <span><strong>Queue paused.</strong> {queue.paused.reason}{queue.paused.until ? ` · resumes at ${new Date(queue.paused.until).toLocaleTimeString()}` : ""}. Running sessions finish their step; nothing new starts.</span>
+        </div>
+      ) : null}
+
       <div className="stats">
-        <div className="card stat"><div className="muted small">Active sessions</div><div className="value">{active}</div></div>
-        <div className="card stat"><div className="muted small">Not started</div><div className="value">{notStarted.length}</div></div>
+        <div className="card stat"><div className="muted small">Active sessions</div><div className="value" data-testid="active-sessions">{queue ? `${sessions} of ${queue.maxConcurrency}` : active}</div></div>
+        <div className="card stat"><div className="muted small">Queued</div><div className="value">{queuedTasks.length}</div></div>
         <div className={`card stat${attention ? " attention" : ""}`}><div className="small">Need attention</div><div className="value">{attention}</div></div>
         <div className="card stat"><div className="muted small">Open PRs</div><div className="value">{openPrs}</div></div>
       </div>
 
+      {error ? <p role="alert" className="small" style={{ color: "var(--st-failed-fg)" }}>{error}</p> : null}
+      <div className={orchestrator ? "execution" : ""}>
+      <div style={{ minWidth: 0 }}>
       <div className="board" aria-label="Pipeline board">
         {columns.map((column) => {
           const cards = shown.filter((r) => columnOf(r) === column.id);
@@ -97,6 +132,26 @@ export function Board({ project, runs, backlog, now, onChanged }: { project: Pro
           );
         })}
       </div>
+
+      {proposed ? (
+        <PlanCard plan={proposed} onApprove={() => void act(() => api.approvePlan(proposed.id))} onReject={() => void act(() => api.rejectPlan(proposed.id))} />
+      ) : null}
+
+      <section className="card panel" aria-label="Queued" style={{ marginBottom: 18 }}>
+        <div className="page-header" style={{ marginBottom: 8 }}>
+          <h2>Queued</h2>
+          <span className="muted small">Start when a slot frees up and their dependencies are on {project.defaultBranch}</span>
+        </div>
+        {queuedTasks.length === 0 ? <p className="muted">Nothing queued. Approve a plan to queue its tasks.</p> : null}
+        {queuedTasks.map((t) => (
+          <div className="list-row" key={t.id} data-testid={`queued-${t.taskId}`}>
+            <span className="mono small muted">{t.taskId}</span>
+            <span>{t.title}</span>
+            <span />
+            <Badge tone="queued" label={t.waitReason ?? "Starting"} />
+          </div>
+        ))}
+      </section>
 
       <section className="card panel" aria-label="Pull requests" style={{ marginBottom: 18 }}>
         <div className="page-header" style={{ marginBottom: 8 }}>
@@ -122,9 +177,8 @@ export function Board({ project, runs, backlog, now, onChanged }: { project: Pro
           <h2>Backlog</h2>
           <span className="muted small">A task starts once its dependencies are merged</span>
         </div>
-        {error ? <p role="alert" className="small" style={{ color: "var(--st-failed-fg)" }}>{error}</p> : null}
         {notStarted.length === 0 ? <p className="muted">Every task has a run.</p> : null}
-        {notStarted.map((task) => {
+        {notStarted.filter((task) => !queuedIds.has(task.id)).map((task) => {
           const waitingFor = task.dependsOn.filter((d) => !merged.has(d));
           return (
             <div className="list-row" key={task.id}>
@@ -135,6 +189,9 @@ export function Board({ project, runs, backlog, now, onChanged }: { project: Pro
             </div>
           );
         })}
+      </div>
+      </div>
+      {orchestrator ? <OrchestratorPane projectId={project.id} session={orchestrator.tmuxSession} onStop={() => void act(() => api.stopOrchestrator(project.id))} /> : null}
       </div>
     </>
   );

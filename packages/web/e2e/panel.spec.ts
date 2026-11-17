@@ -109,3 +109,68 @@ test("answers a review comment and shows the thread as answered", async ({ page 
   await expect(page.locator(".timeline").getByText("Review fix")).toBeVisible();
   await page.screenshot({ path: join(shots, "review.png"), fullPage: true });
 });
+
+/** Calls one tool of the orchestrator's `factory` MCP server, as the orchestrator session would. */
+async function orchestratorTool(projectId: string, name: string, args: Record<string, unknown>): Promise<{ isError?: boolean; content: { text: string }[] }> {
+  const res = await fetch(`${state.url}/mcp/orchestrator/${projectId}`, {
+    method: "POST",
+    headers: { "x-forge-token": state.token, "content-type": "application/json", accept: "application/json, text/event-stream" },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: args } }),
+  });
+  return ((await res.json()) as { result: { isError?: boolean; content: { text: string }[] } }).result;
+}
+
+test("approves a proposed plan in the panel, shows why it waits, and pauses and resumes the queue", async ({ page }) => {
+  await login(page);
+  const projects = await api<{ id: string; repoPath: string }[]>("/projects");
+  const projectId = projects.find((p) => p.repoPath === state.project)!.id;
+  await page.getByRole("button", { name: "Pause queue" }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Queue paused." })).toBeVisible();
+
+  const proposed = await orchestratorTool(projectId, "propose_plan", { rationale: "Health endpoint on its own", waves: [{ tasks: [{ id: "TASK-003", modules: ["src/server"] }] }] });
+  expect(proposed.isError).toBeFalsy();
+  const plan = page.getByRole("region", { name: "Proposed plan" });
+  await expect(plan.getByTestId("plan-task-TASK-003")).toContainText("src/server");
+  await expect(plan.getByText("Wave 1")).toBeVisible();
+  await page.screenshot({ path: join(shots, "plan.png"), fullPage: true });
+  await plan.getByRole("button", { name: "Approve plan" }).click();
+  await expect(plan).toBeHidden();
+
+  const queued = page.getByRole("region", { name: "Queued" });
+  await expect(queued.getByTestId("queued-TASK-003")).toContainText("Queue paused: Paused by a person");
+  await page.getByRole("button", { name: "Resume queue" }).click();
+  await expect(page.getByRole("region", { name: "Plan + test plan" }).getByTestId("run-card-TASK-003")).toBeVisible({ timeout: 20_000 });
+  await expect(queued.getByText("Nothing queued.")).toBeVisible();
+  await expect(page.getByTestId("active-sessions")).toHaveText("1 of 3");
+});
+
+test("shows the usage window the status line reports", async ({ page }) => {
+  await login(page);
+  await expect(page.getByTestId("usage-percent")).toHaveText("—");
+  const resetsAt = Math.floor(Date.now() / 1000) + 2 * 3600 + 14 * 60 + 30;
+  await fetch(`${state.url}/hooks/usage`, {
+    method: "POST",
+    headers: { "x-forge-token": state.token, "content-type": "application/json" },
+    body: JSON.stringify({ rate_limits: { five_hour: { used_percentage: 62, resets_at: resetsAt } } }),
+  });
+  await page.reload();
+  await expect(page.getByTestId("usage-percent")).toHaveText("62%");
+  await expect(page.getByText("Resets in 2 h 14 min")).toBeVisible();
+});
+
+test("opens the orchestrator from Launch tasks and types into its session", async ({ page }) => {
+  await login(page);
+  await page.getByRole("button", { name: "Launch tasks" }).click();
+  const pane = page.getByRole("region", { name: "Orchestrator" });
+  await expect(pane.getByText("Connected")).toBeVisible();
+  await expect(pane.getByTestId("orchestrator-terminal")).toContainText("fake claude ready", { timeout: 20_000 });
+  await pane.getByLabel("Message the orchestrator").fill("plan the remaining tasks");
+  await pane.getByRole("button", { name: "Send" }).click();
+  await expect(pane.getByLabel("Message the orchestrator")).toHaveValue("");
+  await expect
+    .poll(() => readFileSync(join(state.root, "trace.jsonl"), "utf8").includes("plan the remaining tasks"), { timeout: 10_000 })
+    .toBe(true);
+  await page.screenshot({ path: join(shots, "orchestrator.png"), fullPage: true });
+  await pane.getByRole("button", { name: "Stop" }).click();
+  await expect(pane).toBeHidden();
+});
