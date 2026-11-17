@@ -122,3 +122,33 @@ describe("panel access", () => {
     expect(res.text).toContain("pnpm --filter @forge/web build");
   });
 });
+
+describe("panel files", () => {
+  it("serves a rebuilt panel without a restart (new hashed assets appear after start)", async () => {
+    const root = scratch();
+    const web = join(root, "web");
+    mkdirSync(join(web, "assets"), { recursive: true });
+    writeFileSync(join(web, "index.html"), '<script src="/assets/index-old.js"></script>');
+    writeFileSync(join(web, "assets", "index-old.js"), "old");
+    const config = testConfig(root, { webDist: web });
+    const backend = await startBackend(config, { memory: new StubMemory() });
+    try {
+      expect((await fetch(`${backend.url}/assets/index-old.js`)).status).toBe(200);
+      // `vite build` writes new file names while the backend keeps running.
+      writeFileSync(join(web, "assets", "index-new.js"), "new");
+      writeFileSync(join(web, "index.html"), '<script src="/assets/index-new.js"></script>');
+      const asset = await fetch(`${backend.url}/assets/index-new.js`);
+      expect(asset.status).toBe(200);
+      expect(await asset.text()).toBe("new");
+      expect(await (await fetch(`${backend.url}/`)).text()).toContain("index-new.js");
+      // Routes still win over files, and unknown paths still need a token.
+      expect((await fetch(`${backend.url}/runs`)).status).toBe(401);
+      // A normalized ../ leaves /assets and needs a token; an encoded one never leaves the folder.
+      expect((await fetch(`${backend.url}/assets/../../home/token`)).status).toBe(401);
+      expect((await fetch(`${backend.url}/assets/..%2F..%2Fhome%2Ftoken`)).status).toBe(404);
+    } finally {
+      await backend.close();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
