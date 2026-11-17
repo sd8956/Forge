@@ -6,7 +6,7 @@
   "description": "Tiny todo web app used to exercise the Forge pipeline",
   "scripts": {
     "start": "node src/server.js",
-    "test": "node --test test/",
+    "test": "node --test test/*.test.js",
     "test:e2e": "playwright test"
   },
   "devDependencies": {

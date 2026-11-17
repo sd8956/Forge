@@ -15,7 +15,7 @@ lint: ## Project lint rules
 	@node scripts/lint.mjs
 
 unit: ## Unit tests
-	@node --test test/
+	@node --test test/*.test.js
 
 check: build lint unit ## What the development step must keep green
 
