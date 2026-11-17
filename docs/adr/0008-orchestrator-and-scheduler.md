@@ -19,6 +19,23 @@
 - **Persistent queue state.** A `setting` key-value table keeps the queue pause and the latest usage window, so a
   restart neither forgets a pause nor launches past a limit.
 
+- **The scheduler owns every launch from a plan and every review round.** A pass gathers open runs, merged
+  dependencies, the pause and the usage window, asks the pure `schedule` what may start and starts it through the
+  run service. It runs on an interval and whenever a run changes status. The PR watcher no longer starts review
+  rounds: it stores the threads and wakes the scheduler, which gives review rounds the free slots first.
+- **Slots and modules.** Runs that are `queued`, `running` or `needs_human` hold a slot (the definition's "sessions"),
+  whether a plan or `forge run-task` started them; `forge run-task` itself is not capped. Their plan task's modules
+  are busy; a run waiting for review holds neither. Modules overlap when one is the other or a folder above it.
+  `FORGE_MAX_CONCURRENCY` (default 3) caps all projects; `policies.max_concurrency` can lower it for one project.
+- **Merged dependencies.** A dependency counts as merged only when git says so *and* no Forge run for it is
+  unfinished (open or waiting for review) and it is not still queued. A fresh task branch with no commits is an
+  ancestor of the base branch, so git alone called it merged (this also fixes `forge run-task`).
+- **Pulling the base branch.** When a dependency is merged on GitHub but not locally, the scheduler fetches
+  `origin/<base>` and fast-forwards the project checkout, the way a person pulls main before the next task. It does
+  so only when the checkout is on the base branch and has no uncommitted changes; otherwise the wait reason says why.
+- **Restarts.** A queued task whose run already exists (the backend stopped between inserting the run and linking it)
+  is linked, not launched again.
+
 ## Consequences
 
 - `task` from the definition's data model is not created; its `depends_on` and status live in the backlog files,

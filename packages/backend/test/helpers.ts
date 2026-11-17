@@ -65,6 +65,9 @@ export function testConfig(root: string, overrides: Partial<ForgeConfig> = {}): 
     webDist: join(root, "no-web"),
     ghBin: FAKE_GH,
     prPollIntervalMs: 200,
+    maxConcurrency: 3,
+    usagePausePercent: 90,
+    schedulerIntervalMs: 200,
     ...overrides,
   };
 }

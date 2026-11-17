@@ -29,7 +29,10 @@ export interface SchedulerInput {
   items: QueueItem[];
   active: ActiveRun[];
   reviews: ReviewCandidate[];
+  /** Sessions Forge may run at once, across projects. */
   maxConcurrency: number;
+  /** `policies.max_concurrency` per project path, a lower cap for that project. */
+  projectCaps?: Record<string, number>;
   paused: { reason: string } | null;
   /** Latest 5-hour usage window reported by Claude Code. */
   usage: { percent: number; resetsAt: number } | null;
@@ -82,6 +85,8 @@ export function schedule(input: SchedulerInput): SchedulerDecision {
     } else decision.reviewWaits[r.runId] = slotWait();
   }
 
+  const perProject = new Map<string, number>();
+  for (const a of input.active) perProject.set(a.projectPath, (perProject.get(a.projectPath) ?? 0) + 1);
   const holders = input.active.map((a) => ({ projectPath: a.projectPath, taskId: a.taskId, modules: a.modules.map(norm) }));
   for (const i of items) {
     if (i.unmergedDeps.length) {
@@ -104,6 +109,13 @@ export function schedule(input: SchedulerInput): SchedulerDecision {
       decision.waits[i.id] = slotWait();
       continue;
     }
+    const cap = input.projectCaps?.[i.projectPath];
+    const mine = perProject.get(i.projectPath) ?? 0;
+    if (cap !== undefined && mine >= cap) {
+      decision.waits[i.id] = `Waiting for a slot (${mine} of ${cap} sessions for this project busy)`;
+      continue;
+    }
+    perProject.set(i.projectPath, mine + 1);
     decision.launches.push(i.id);
     holders.push({ projectPath: i.projectPath, taskId: i.taskId, modules });
     busy++;

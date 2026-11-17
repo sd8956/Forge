@@ -9,7 +9,12 @@ export const projectConfigSchema = z.looseObject({
   name: z.string().min(1),
   platforms: z.array(z.string()).default([]),
   commands: z.record(z.string(), z.string()).default({}),
-  policies: z.looseObject({}).default({}),
+  policies: z
+    .looseObject({
+      /** Lower cap on this project's parallel sessions; Forge's global cap still applies. */
+      max_concurrency: z.number().int().min(1).max(10).optional(),
+    })
+    .default({}),
   review: z
     .looseObject({
       /** GitHub logins whose PR comments the review loop handles. Empty means nobody. */

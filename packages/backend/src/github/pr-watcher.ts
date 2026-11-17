@@ -13,6 +13,8 @@ interface Deps {
   projects: ProjectStore;
   github: GitHubClient;
   runService: RunService;
+  /** New feedback arrived: the scheduler starts the review round when a session slot is free. */
+  onFeedback: (runId: string) => Promise<void>;
   /** Default polling interval; a project can override it with review.poll_interval_seconds. */
   intervalMs: number;
   now?: () => number;
@@ -85,6 +87,6 @@ export class PrWatcher {
       if (log) this.deps.threads.setBody(thread.id, `${thread.body}\n\nFailed log (tail):\n${log}`);
     }
     this.deps.runs.recordEvent(run.id, "review_feedback", { threads: inserted.map((t) => t.externalId) });
-    await this.deps.runService.requestReview(run.id, inserted.map((t) => t.externalId).join(","));
+    await this.deps.onFeedback(run.id);
   }
 }

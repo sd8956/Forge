@@ -134,6 +134,10 @@ export class PlanStore {
     return this.db.select().from(settings).where(eq(settings.key, key)).get()?.value as T | undefined;
   }
 
+  deleteSetting(key: string): void {
+    this.db.delete(settings).where(eq(settings.key, key)).run();
+  }
+
   setSetting(key: string, value: unknown): void {
     this.db
       .insert(settings)

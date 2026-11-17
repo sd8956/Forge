@@ -17,6 +17,8 @@ import { PrWatcher } from "./github/pr-watcher.js";
 import { EngramAdapter, type MemoryAdapter } from "./memory/memory-adapter.js";
 import { Tmux } from "./runner/tmux.js";
 import { archiveDirFor, RunService } from "./runs/run-service.js";
+import { SchedulerService } from "./runs/scheduler-service.js";
+import { PlanStore } from "./db/plan-store.js";
 import { StepService } from "./steps/step-service.js";
 
 export interface Backend {
@@ -32,6 +34,8 @@ export interface Backend {
   loginLink: () => string;
   watcher: PrWatcher;
   threads: PrThreadStore;
+  plans: PlanStore;
+  scheduler: SchedulerService;
   /** Stops the HTTP server and timers. tmux sessions are left running on purpose. */
   close: () => Promise<void>;
 }
@@ -62,12 +66,15 @@ export async function startBackend(config: ForgeConfig, opts: { logger?: boolean
   const threads = new PrThreadStore(db);
   const runService = new RunService({ config, runs, steps: service, threads, memory, memoryProject: memoryProjectFor, log });
   const projects = new ProjectStore(db);
+  const plans = new PlanStore(db, Date.now, (event) => bus.publish(event));
+  const scheduler = new SchedulerService({ config, plans, runs, threads, runService, log });
   const watcher = new PrWatcher({
     runs,
     threads,
     projects,
     github: opts.github ?? new GhCliClient(config.ghBin),
     runService,
+    onFeedback: () => scheduler.tick(),
     intervalMs: config.prPollIntervalMs,
     log,
   });
@@ -103,6 +110,11 @@ export async function startBackend(config: ForgeConfig, opts: { logger?: boolean
   await runService.reconcile();
   service.startSweeper();
   watcher.start();
+  scheduler.start();
+  // A run that changes status may free a slot or a module.
+  const unsubscribe = bus.subscribe((event) => {
+    if (event.entity === "run" && event.type === "transition") void scheduler.tick();
+  });
 
   return {
     url,
@@ -116,7 +128,11 @@ export async function startBackend(config: ForgeConfig, opts: { logger?: boolean
     loginLink: () => loginUrl({ baseUrl: () => url, codes }),
     watcher,
     threads,
+    plans,
+    scheduler,
     close: async () => {
+      unsubscribe();
+      await scheduler.stop();
       await watcher.stop();
       await app.close();
       await service.shutdown();

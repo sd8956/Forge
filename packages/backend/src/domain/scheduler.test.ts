@@ -23,6 +23,12 @@ describe("schedule", () => {
     expect(result.waits).toEqual({ "pt-TASK-002": "Waiting for a slot (2 of 2 sessions busy)" });
   });
 
+  it("also respects a lower cap for one project", () => {
+    const result = schedule({ ...base, projectCaps: { [P]: 1 }, items: [item("TASK-001"), item("TASK-002"), item("TASK-003", { projectPath: "/other" })] });
+    expect(result.launches).toEqual(["pt-TASK-001", "pt-TASK-003"]);
+    expect(result.waits["pt-TASK-002"]).toBe("Waiting for a slot (1 of 1 sessions for this project busy)");
+  });
+
   it("orders by priority, then wave, then queue time", () => {
     const result = schedule({
       ...base,
