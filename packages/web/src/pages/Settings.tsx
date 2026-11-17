@@ -1,0 +1,143 @@
+import { useEffect, useState } from "react";
+import { api, type ForgeSettings, type Project, type ProjectSettings } from "../api.js";
+
+function useMessage() {
+  const [message, setMessage] = useState<{ text: string; error: boolean } | null>(null);
+  const run = <T,>(call: Promise<T>, done: (value: T) => void, ok: string) =>
+    void call.then(
+      (value) => {
+        done(value);
+        setMessage({ text: ok, error: false });
+      },
+      (e: unknown) => setMessage({ text: e instanceof Error ? e.message : String(e), error: true }),
+    );
+  return { message, run };
+}
+
+function Message({ message }: { message: { text: string; error: boolean } | null }) {
+  if (!message) return null;
+  return (
+    <p role={message.error ? "alert" : "status"} className="small" style={message.error ? { color: "var(--st-failed-fg)" } : undefined}>
+      {message.text}
+    </p>
+  );
+}
+
+function Limits({ settings, onSaved }: { settings: ForgeSettings; onSaved: (s: ForgeSettings) => void }) {
+  const [max, setMax] = useState(String(settings.maxConcurrency));
+  const [usage, setUsage] = useState(String(settings.usagePausePercent));
+  const { message, run } = useMessage();
+  return (
+    <section className="card panel settings-section" aria-label="Sessions and usage">
+      <h2>Sessions and usage</h2>
+      <p className="muted small">How many Claude Code sessions run at once across projects, and the 5-hour usage at which new tasks stop starting.</p>
+      <form
+        className="settings-grid"
+        onSubmit={(e) => {
+          e.preventDefault();
+          run(api.updateSettings({ maxConcurrency: Number(max), usagePausePercent: Number(usage) }), onSaved, "Saved.");
+        }}
+      >
+        <label htmlFor="max-sessions">Max sessions</label>
+        <input id="max-sessions" className="field" type="number" min={1} max={10} value={max} onChange={(e) => setMax(e.target.value)} />
+        <label htmlFor="usage-pause">Pause new tasks at (%)</label>
+        <input id="usage-pause" className="field" type="number" min={1} max={100} value={usage} onChange={(e) => setUsage(e.target.value)} />
+        <span />
+        <button type="submit" className="btn primary">Save</button>
+      </form>
+      <Message message={message} />
+    </section>
+  );
+}
+
+function Authentication({ settings, onSaved }: { settings: ForgeSettings; onSaved: (s: ForgeSettings) => void }) {
+  const [key, setKey] = useState("");
+  const { message, run } = useMessage();
+  return (
+    <section className="card panel settings-section" aria-label="Claude authentication">
+      <h2>Claude authentication</h2>
+      <p className="muted small">
+        Sessions use your Claude subscription login by default. An Anthropic API key is the fallback if automation outside normal subscription use is not
+        allowed. The key is stored only in a private file in Forge's home; sessions read it through Claude Code's apiKeyHelper, never from their environment.
+      </p>
+      <fieldset className="auth-choice">
+        <legend className="sr-only">Authentication</legend>
+        <label>
+          <input type="radio" name="auth" checked={settings.auth === "subscription"} onChange={() => run(api.updateSettings({ auth: "subscription" }), onSaved, "Sessions use your subscription.")} />
+          Subscription
+        </label>
+        <label>
+          <input type="radio" name="auth" checked={settings.auth === "api_key"} onChange={() => run(api.updateSettings({ auth: "api_key" }), onSaved, "Sessions use the API key.")} />
+          API key
+        </label>
+      </fieldset>
+      <p className="small" data-testid="api-key-status">{settings.apiKey.configured ? `Key ending in ${settings.apiKey.last4 ?? ""}` : "No API key saved."}</p>
+      <form
+        className="settings-grid"
+        onSubmit={(e) => {
+          e.preventDefault();
+          run(api.saveApiKey(key.trim()), (s) => { setKey(""); onSaved(s); }, "API key saved.");
+        }}
+      >
+        <label htmlFor="api-key">Anthropic API key</label>
+        <input id="api-key" className="field mono" type="password" autoComplete="off" value={key} onChange={(e) => setKey(e.target.value)} placeholder="sk-ant-…" />
+        <span />
+        <div className="actions">
+          <button type="submit" className="btn primary" disabled={!key.trim()}>Save key</button>
+          {settings.apiKey.configured ? <button type="button" className="btn" onClick={() => run(api.removeApiKey(), onSaved, "API key removed.")}>Remove key</button> : null}
+        </div>
+      </form>
+      <Message message={message} />
+    </section>
+  );
+}
+
+function ProjectSection({ project }: { project: Project }) {
+  const [settings, setSettings] = useState<ProjectSettings | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    void api.projectSettings(project.id).then(setSettings, (e: unknown) => setError(e instanceof Error ? e.message : String(e)));
+  }, [project.id]);
+  return (
+    <section className="card panel settings-section" aria-label="Project settings">
+      <h2>Project · {project.name}</h2>
+      {error ? <p role="alert">{error}</p> : null}
+      {settings ? (
+        <>
+          <p className="muted small">These come from <span className="mono">{settings.file}</span>, the project's source of truth. Edit them there and commit.</p>
+          <div className="kv"><span>Permission mode</span><span className="mono">{settings.permissionMode}</span></div>
+          <div className="kv"><span>Max sessions for this project</span><span className="mono">{settings.maxConcurrency ?? "Forge's limit"}</span></div>
+          <div className="kv"><span>Extra review authors</span><span className="mono">{settings.allowedAuthors.length ? settings.allowedAuthors.join(", ") : "none (write collaborators only)"}</span></div>
+          <div className="kv"><span>PR poll interval</span><span className="mono">{settings.pollIntervalSeconds ? `${settings.pollIntervalSeconds} s` : "Forge's default"}</span></div>
+          <div className="kv"><span>Commands</span><span className="mono small">{Object.entries(settings.commands).map(([k, v]) => `${k}: ${v}`).join(" · ")}</span></div>
+        </>
+      ) : null}
+    </section>
+  );
+}
+
+export function SettingsPage({ project }: { project: Project | null }) {
+  const [settings, setSettings] = useState<ForgeSettings | null>(null);
+  useEffect(() => {
+    void api.settings().then(setSettings);
+  }, []);
+  return (
+    <>
+      <div className="page-header">
+        <div>
+          <h1>Settings</h1>
+          <div className="muted">Forge-wide settings, and the selected project's</div>
+        </div>
+      </div>
+      {settings ? (
+        <>
+          <Limits settings={settings} onSaved={setSettings} />
+          <Authentication settings={settings} onSaved={setSettings} />
+        </>
+      ) : (
+        <p className="muted">Loading…</p>
+      )}
+      {project ? <ProjectSection project={project} /> : null}
+    </>
+  );
+}

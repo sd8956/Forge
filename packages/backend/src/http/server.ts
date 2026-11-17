@@ -13,6 +13,8 @@ import type { ForgeConfig } from "../config.js";
 import { registerOrchestratorRoutes } from "./orchestrator-routes.js";
 import { registerDefinitionRoutes } from "./definition-routes.js";
 import type { DefinitionService } from "../definition/definition-service.js";
+import { apiKeyInput, settingsPatch, SettingsError, type SettingsService } from "../settings/settings-service.js";
+import { loadProjectConfig } from "../projects/project-config.js";
 import type { PrThreadStore } from "../db/pr-thread-store.js";
 import type { ProjectStore } from "../db/project-store.js";
 import { DuplicateRunError, toRunView, type RunStore } from "../db/run-store.js";
@@ -51,6 +53,7 @@ interface ServerDeps {
   plans: PlanStore;
   orchestrator: OrchestratorService;
   definition: DefinitionService;
+  settings: SettingsService;
   config: ForgeConfig;
   bus: EventBus;
   tmuxSocket: string;
@@ -131,6 +134,57 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
   });
 
   registerDefinitionRoutes(app, deps.definition);
+
+  // ---------------------------------------------------------- settings
+  const settingsRefused = (reply: FastifyReply, error: unknown) => {
+    if (error instanceof SettingsError) return reply.code(409).send({ error: "settings_refused", message: error.message });
+    throw error;
+  };
+  app.get("/settings", () => deps.settings.get());
+  app.patch("/settings", (request, reply) => {
+    const body = settingsPatch.safeParse(request.body ?? {});
+    if (!body.success) return badRequest(reply, body.error);
+    try {
+      const updated = deps.settings.update(body.data);
+      void deps.scheduler.tick();
+      return updated;
+    } catch (error) {
+      return settingsRefused(reply, error);
+    }
+  });
+  app.put("/settings/api-key", (request, reply) => {
+    const body = apiKeyInput.safeParse(request.body);
+    // Never echo the rejected value back.
+    if (!body.success) return reply.code(400).send({ error: "invalid_request", message: "Not an Anthropic API key (sk-ant-...)" });
+    return deps.settings.saveApiKey(body.data.key);
+  });
+  app.delete("/settings/api-key", (_request, reply) => {
+    try {
+      return deps.settings.removeApiKey();
+    } catch (error) {
+      return settingsRefused(reply, error);
+    }
+  });
+  /** A project's settings come from its project.yaml, the source of truth; the panel shows them read-only. */
+  app.get("/projects/:projectId/settings", (request, reply) => {
+    const params = z.object({ projectId: z.uuid() }).safeParse(request.params);
+    if (!params.success) return badRequest(reply, params.error);
+    const project = deps.projects.get(params.data.projectId);
+    if (!project) return reply.code(404).send({ error: "unknown_project" });
+    try {
+      const config = loadProjectConfig(project.repoPath);
+      return {
+        file: join(project.repoPath, ".factory", "project.yaml"),
+        permissionMode: config.policies.permission_mode,
+        maxConcurrency: config.policies.max_concurrency ?? null,
+        allowedAuthors: config.review.allowed_authors,
+        pollIntervalSeconds: config.review.poll_interval_seconds ?? null,
+        commands: config.commands,
+      };
+    } catch (error) {
+      return reply.code(409).send({ error: "invalid_project", message: error instanceof Error ? error.message : String(error) });
+    }
+  });
 
   registerOrchestratorRoutes(app, {
     config: deps.config,

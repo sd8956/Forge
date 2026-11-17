@@ -77,6 +77,12 @@ export const api = {
     if (filter.ref) params.set("ref", filter.ref);
     return request<MemoryList>(`/projects/${projectId}/memories${params.size ? `?${params.toString()}` : ""}`);
   },
+  settings: () => request<ForgeSettings>("/settings"),
+  updateSettings: (patch: Partial<Pick<ForgeSettings, "maxConcurrency" | "usagePausePercent" | "auth">>) =>
+    request<ForgeSettings>("/settings", { method: "PATCH", body: JSON.stringify(patch) }),
+  saveApiKey: (key: string) => request<ForgeSettings>("/settings/api-key", { method: "PUT", body: JSON.stringify({ key }) }),
+  removeApiKey: () => request<ForgeSettings>("/settings/api-key", { method: "DELETE" }),
+  projectSettings: (projectId: string) => request<ProjectSettings>(`/projects/${projectId}/settings`),
   definitions: () => request<{ projectId: string; repoPath: string; prUrl: string | null }[]>("/definitions"),
   definition: (projectId: string) => request<DefinitionView>(`/projects/${projectId}/definition`),
   beginDefinition: (path: string, idea: string) => request<DefinitionView>("/definitions", { method: "POST", body: JSON.stringify({ path, idea }) }),
@@ -117,4 +123,20 @@ export interface MemoryList {
   available: boolean;
   error?: string;
   items: MemoryItem[];
+}
+
+export interface ForgeSettings {
+  maxConcurrency: number;
+  usagePausePercent: number;
+  auth: "subscription" | "api_key";
+  apiKey: { configured: boolean; last4: string | null };
+}
+
+export interface ProjectSettings {
+  file: string;
+  permissionMode: "auto" | "agent";
+  maxConcurrency: number | null;
+  allowedAuthors: string[];
+  pollIntervalSeconds: number | null;
+  commands: Record<string, string>;
 }

@@ -3,6 +3,7 @@ import { api, UnauthorizedError, type BacklogTask, type DefinitionView, type Orc
 import { factoryTree } from "./definition.js";
 import { DefinitionPage, StartDefinition } from "./pages/Definition.js";
 import { MemoryPage } from "./pages/Memory.js";
+import { SettingsPage } from "./pages/Settings.js";
 import { Icon } from "./components/Icon.js";
 import { UsageWidget } from "./components/UsageWidget.js";
 import { Board } from "./pages/Board.js";
@@ -114,6 +115,7 @@ export function App() {
   const runId = /^#\/runs\/([0-9a-f-]{36})/.exec(route)?.[1];
   const onDefinition = route.startsWith("#/definition");
   const onMemory = route.startsWith("#/memory");
+  const onSettings = route.startsWith("#/settings");
   const started = (view: DefinitionView) => {
     setProjectId(view.projectId);
     setDefinition(view);
@@ -140,9 +142,10 @@ export function App() {
           </select>
         </label>
         <nav className="nav" aria-label="Main">
-          <a href="#/" className={onDefinition || onMemory ? "" : "active"}><Icon name="board" /> Execution</a>
+          <a href="#/" className={onDefinition || onMemory || onSettings ? "" : "active"}><Icon name="board" /> Execution</a>
           <a href="#/definition" className={onDefinition ? "active" : ""}><Icon name="pencil" /> Definition</a>
           <a href="#/memory" className={onMemory ? "active" : ""}><Icon name="memory" /> Memory</a>
+          <a href="#/settings" className={onSettings ? "active" : ""}><Icon name="settings" /> Settings</a>
         </nav>
         {onDefinition && definition ? (
           <div className="factory-tree" aria-label=".factory files">
@@ -156,7 +159,9 @@ export function App() {
       </aside>
       <main className="main">
         {error ? <p role="alert">{error}</p> : null}
-        {onMemory && project ? (
+        {onSettings ? (
+          <SettingsPage project={project} />
+        ) : onMemory && project ? (
           <MemoryPage project={project} />
         ) : onDefinition ? (
           project && definition ? (

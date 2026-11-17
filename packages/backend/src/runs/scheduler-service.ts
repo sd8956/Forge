@@ -43,6 +43,8 @@ interface Deps {
   threads: PrThreadStore;
   runService: RunService;
   baseSync?: BaseSync;
+  /** Session cap and usage threshold from the panel's Settings; the config's values otherwise. */
+  limits?: () => { maxConcurrency: number; usagePausePercent: number };
   now?: () => number;
   log?: (msg: string, extra?: Record<string, unknown>) => void;
 }
@@ -100,6 +102,10 @@ export class SchedulerService {
       } while (this.again && !this.stopped);
     })().finally(() => (this.running = undefined));
     return this.running;
+  }
+
+  limits(): { maxConcurrency: number; usagePausePercent: number } {
+    return this.deps.limits?.() ?? { maxConcurrency: this.deps.config.maxConcurrency, usagePausePercent: this.deps.config.usagePausePercent };
   }
 
   // ------------------------------------------------------------ pause, usage
@@ -194,11 +200,11 @@ export class SchedulerService {
       items: queueItems,
       active,
       reviews,
-      maxConcurrency: this.deps.config.maxConcurrency,
+      maxConcurrency: this.limits().maxConcurrency,
       projectCaps,
       paused: this.pauseState(),
       usage: this.usage()?.fiveHour ?? null,
-      usagePausePercent: this.deps.config.usagePausePercent,
+      usagePausePercent: this.limits().usagePausePercent,
       now: this.now(),
     });
 

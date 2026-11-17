@@ -283,3 +283,36 @@ test("shows what the steps saved in Engram, filtered by task or step, with a lin
   await expect(list.getByText("Todo store seam")).toBeHidden();
   await page.screenshot({ path: join(shots, "memory.png"), fullPage: true });
 });
+
+test("changes Forge's limits and authentication in Settings, and shows the project's settings from project.yaml", async ({ page }) => {
+  await login(page);
+  await page.getByRole("link", { name: "Settings" }).click();
+  await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
+  const limits = page.getByRole("region", { name: "Sessions and usage" });
+  await limits.getByLabel("Max sessions").fill("2");
+  await limits.getByRole("button", { name: "Save" }).click();
+  await expect(limits.getByRole("status")).toHaveText("Saved.");
+
+  const auth = page.getByRole("region", { name: "Claude authentication" });
+  await auth.getByLabel("Anthropic API key").fill("sk-ant-api03-e2e-ABCDEFGHIJKLMNOPQRSTUVWXYZ-wxyz");
+  await auth.getByRole("button", { name: "Save key" }).click();
+  await expect(auth.getByTestId("api-key-status")).toHaveText("Key ending in wxyz");
+  // The choice is the backend's state: the radio turns on once the backend confirms it.
+  await auth.getByRole("radio", { name: "API key" }).click();
+  await expect(auth.getByRole("radio", { name: "API key" })).toBeChecked();
+  await expect(auth.getByRole("status")).toHaveText("Sessions use the API key.");
+  await auth.getByRole("button", { name: "Remove key" }).click();
+  await expect(auth.getByRole("alert")).toHaveText("Switch back to the subscription before removing the key in use");
+  await auth.getByRole("radio", { name: "Subscription" }).click();
+  await expect(auth.getByRole("radio", { name: "Subscription" })).toBeChecked();
+  await auth.getByRole("button", { name: "Remove key" }).click();
+  await expect(auth.getByTestId("api-key-status")).toHaveText("No API key saved.");
+
+  const projectSettings = page.getByRole("region", { name: "Project settings" });
+  await expect(projectSettings).toContainText(".factory/project.yaml");
+  await expect(projectSettings).toContainText("auto");
+  await page.screenshot({ path: join(shots, "settings.png"), fullPage: true });
+
+  await page.getByRole("link", { name: "Execution" }).click();
+  await expect(page.getByTestId("active-sessions")).toContainText("of 2");
+});
