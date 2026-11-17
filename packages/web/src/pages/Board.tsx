@@ -6,12 +6,14 @@ import { OrchestratorPane } from "../components/OrchestratorPane.js";
 import { PlanCard } from "../components/PlanCard.js";
 import { duration, runStatus, STEP_LABELS, stepStatus } from "../status.js";
 
-const STEP_COLUMNS = ["plan", "design", "development", "security", "e2e", "pr", "review_fix"] as const;
+const STEP_COLUMNS = ["plan", "design", "development", "security", "e2e", "pr", "review"] as const;
 const OPEN = new Set(["queued", "running", "needs_human"]);
 
 /** Where a run's card goes: its current step while open, else its outcome column. */
 export function columnOf(run: RunSummary): string {
-  if (run.status === "waiting_review") return "awaiting_review";
+  // A PR waiting for review and its review rounds stay on the board, in the Review column.
+  if (run.status === "waiting_review") return "review";
+  if (OPEN.has(run.status) && run.currentStep === "review_fix") return "review";
   if (run.status === "done") return "done";
   if (!OPEN.has(run.status)) return "closed";
   return run.latestStep && run.latestStep.kind === run.currentStep ? run.latestStep.kind : run.currentStep;
@@ -19,7 +21,7 @@ export function columnOf(run: RunSummary): string {
 
 function RunCard({ run, task, now }: { run: RunSummary; task: BacklogTask | undefined; now: number }) {
   const step = run.latestStep;
-  const status = run.status === "needs_human" ? runStatus(run.status) : step && OPEN.has(run.status) ? stepStatus(step.status) : runStatus(run.status);
+  const status = run.status === "needs_human" || run.status === "waiting_review" ? runStatus(run.status) : step && OPEN.has(run.status) ? stepStatus(step.status) : runStatus(run.status);
   const detail =
     run.status === "needs_human"
       ? (run.exitReason ?? (step?.permissionPrompts ? "Waiting for a permission answer" : "Waiting for a person"))
@@ -64,8 +66,8 @@ export function Board({ project, runs, backlog, now, onChanged, queue = null, pl
   const merged = new Set(shown.filter((r) => r.status === "done").map((r) => r.taskId));
   const notStarted = backlog.filter((t) => !latestPerTask.has(t.id) || ["failed", "cancelled"].includes(latestPerTask.get(t.id)?.status ?? ""));
 
-  const columns = STEP_COLUMNS.map((id) => ({ id, label: STEP_LABELS[id] ?? id }));
-  const prRuns = shown.filter((r) => ["awaiting_review", "done"].includes(columnOf(r)));
+  const columns = STEP_COLUMNS.map((id) => ({ id, label: id === "review" ? "Review" : (STEP_LABELS[id] ?? id) }));
+  const prRuns = shown.filter((r) => r.status === "waiting_review" || r.status === "done");
 
   const act = async (action: () => Promise<unknown>) => {
     setError(null);
@@ -162,7 +164,7 @@ export function Board({ project, runs, backlog, now, onChanged, queue = null, pl
         {prRuns.map((run) => {
           const status = runStatus(run.status);
           return (
-            <a key={run.id} className="list-row" href={`#/runs/${run.id}`} data-testid={`run-card-${run.taskId}`} style={{ color: "inherit", textDecoration: "none" }}>
+            <a key={run.id} className="list-row" href={`#/runs/${run.id}`} data-testid={`pr-row-${run.taskId}`} style={{ color: "inherit", textDecoration: "none" }}>
               <span className="mono small muted">{run.taskId}</span>
               <span>{tasks.get(run.taskId)?.title ?? run.taskId}</span>
               <span className="small muted">{run.prUrl ? `PR #${run.prNumber ?? ""}` : ""}{run.reviewRound ? ` · review round ${run.reviewRound}` : ""}</span>
