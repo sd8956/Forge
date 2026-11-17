@@ -100,10 +100,17 @@ describe("PR watcher and review loop with fake claude and fake gh", () => {
     expect(afterRestart).toMatchObject({ status: "waiting_review", reviewRound: 1 });
     expect(afterRestart.steps).toHaveLength(reviewed.steps.length);
 
+    const evidenceOf = async () => (await api.request("GET", `/runs/${id}/evidence`)).body as { testPlan: unknown[]; cases: unknown[]; tests: unknown; security: unknown };
+    const beforeMerge = await evidenceOf();
+    expect(beforeMerge.testPlan.length).toBeGreaterThan(0);
+    expect(beforeMerge.cases.length).toBeGreaterThan(0);
+
     ctx.gh.edit((s) => {
       if (s.prs["7"]) s.prs["7"].state = "MERGED";
     });
     const done = await api.waitForRun(id, "done", 20_000);
+    // The worktree is gone; the "Test plan and evidence" tab reads the archive instead.
+    expect(await evidenceOf()).toEqual(beforeMerge);
     expect(done.exitReason).toBe("merged");
     expect(existsSync(join(ctx.project, ".worktrees", "TASK-001"))).toBe(false);
     expect(ctx.memory.saved).toEqual([expect.objectContaining({ project: "demo-project", content: expect.stringContaining("Ref: TASK-001/review") as string })]);

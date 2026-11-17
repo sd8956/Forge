@@ -32,11 +32,11 @@ export interface StepOutcome {
    * reported: the agent called report_step. infrastructure: timeout, crash or
    * lost session. launch: the session could not even start (deterministic).
    */
-  cause: "reported" | "infrastructure" | "launch";
+  cause: "reported" | "infrastructure" | "launch" | "rate_limit";
 }
 
 export type NextAction =
-  | { kind: "launch"; step: StepKind; attempts: Attempts; reason: "next_step" | "on_fail" | "retry" }
+  | { kind: "launch"; step: StepKind; attempts: Attempts; reason: "next_step" | "on_fail" | "retry" | "rate_limit" }
   | { kind: "complete"; attempts: Attempts }
   | { kind: "needs_human"; step: StepKind; reason: "blocked" | "attempts_exhausted"; attempts: Attempts }
   | { kind: "fail"; step: StepKind; reason: "launch_failed" };
@@ -67,6 +67,8 @@ export function decideNext(pipeline: Pipeline, attempts: Attempts, outcome: Step
   }
 
   if (outcome.cause === "launch") return { kind: "fail", step: step.id, reason: "launch_failed" };
+  // A usage limit says nothing about the work: run the same step again once the queue resumes.
+  if (outcome.cause === "rate_limit") return { kind: "launch", step: step.id, attempts: { ...attempts }, reason: "rate_limit" };
 
   const failures = (attempts[step.id] ?? 0) + 1;
   const counted: Attempts = { ...attempts, [step.id]: failures };

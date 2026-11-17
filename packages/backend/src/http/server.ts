@@ -1,9 +1,16 @@
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import type { Duplex } from "node:stream";
 import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import { activityHookInput, notificationHookInput, preToolUseHookInput, sessionEndHookInput, startRunRequest, stopHookInput } from "@forge/shared";
+import { activityHookInput, notificationHookInput, preToolUseHookInput, sessionEndHookInput, startRunRequest, stopFailureHookInput, stopHookInput, usageReportInput } from "@forge/shared";
 import { z } from "zod";
 import { TOKEN_HEADER, tokenMatches } from "../auth.js";
+import type { SchedulerService } from "../runs/scheduler-service.js";
+import type { PlanStore } from "../db/plan-store.js";
+import type { OrchestratorService } from "../orchestrator/orchestrator-service.js";
+import type { ForgeConfig } from "../config.js";
+import { registerOrchestratorRoutes } from "./orchestrator-routes.js";
 import type { PrThreadStore } from "../db/pr-thread-store.js";
 import type { ProjectStore } from "../db/project-store.js";
 import { DuplicateRunError, toRunView, type RunStore } from "../db/run-store.js";
@@ -17,7 +24,8 @@ import { registerPanelRoutes } from "./panel-routes.js";
 import { registerWsRoutes } from "./ws-routes.js";
 import { runEvidence } from "./evidence.js";
 import { listBacklog } from "../projects/project-config.js";
-import { join } from "node:path";
+import { existsSync } from "node:fs";
+import { join, relative } from "node:path";
 import type { EventBus } from "../events/event-bus.js";
 
 interface ServerDeps {
@@ -37,6 +45,10 @@ interface ServerDeps {
   webDist: string;
   archiveDir: (runId: string) => string;
   threads: PrThreadStore;
+  scheduler: SchedulerService;
+  plans: PlanStore;
+  orchestrator: OrchestratorService;
+  config: ForgeConfig;
   bus: EventBus;
   tmuxSocket: string;
   logger?: boolean;
@@ -49,6 +61,14 @@ function isPublic(path: string): boolean {
 
 const stepIdParams = z.object({ stepId: z.uuid() });
 const runIdParams = z.object({ runId: z.uuid() });
+
+async function gitStdout(args: string[]): Promise<string> {
+  try {
+    return (await promisify(execFile)("git", args, { encoding: "utf8" })).stdout.trim();
+  } catch {
+    return "";
+  }
+}
 
 function badRequest(reply: FastifyReply, error: z.ZodError) {
   return reply.code(400).send({ error: "invalid_request", issues: error.issues });
@@ -89,7 +109,27 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     if ((changesState || websocket) && !isLocalOrigin(request.headers.origin, deps.port())) return refuse(403, "forbidden_origin");
   });
 
-  await registerWsRoutes(app, { bus: deps.bus, store: deps.store, tmuxSocket: deps.tmuxSocket });
+  await registerWsRoutes(app, {
+    bus: deps.bus,
+    store: deps.store,
+    tmuxSocket: deps.tmuxSocket,
+    orchestratorSession: async (projectId) => {
+      const project = deps.projects.get(projectId);
+      return project ? ((await deps.orchestrator.status(project))?.tmuxSession ?? null) : null;
+    },
+    onOrchestratorControl: (projectId) => deps.plans.recordEvent("plan", projectId, "orchestrator_control", { via: "panel" }),
+  });
+
+  registerOrchestratorRoutes(app, {
+    config: deps.config,
+    plans: deps.plans,
+    runs: deps.runs,
+    runService: deps.runService,
+    scheduler: deps.scheduler,
+    projects: deps.projects,
+    orchestrator: deps.orchestrator,
+    baseBranch: async (projectPath) => (await gitStdout(["-C", projectPath, "rev-parse", "--abbrev-ref", "HEAD"])) || "main",
+  });
 
   await registerPanelRoutes(app, {
     token: deps.token,
@@ -129,6 +169,21 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     const parsed = notificationHookInput.safeParse(request.body);
     if (!parsed.success) return badRequest(reply, parsed.error);
     deps.service.onNotification(parsed.data);
+    return reply.code(204).send();
+  });
+
+  app.post("/hooks/stop-failure", async (request, reply) => {
+    const parsed = stopFailureHookInput.safeParse(request.body);
+    if (!parsed.success) return badRequest(reply, parsed.error);
+    await deps.service.onStopFailure(parsed.data);
+    return reply.code(204).send();
+  });
+
+  app.post("/hooks/usage", async (request, reply) => {
+    const parsed = usageReportInput.safeParse(request.body);
+    if (!parsed.success) return badRequest(reply, parsed.error);
+    const window = (w: { used_percentage: number; resets_at: number } | undefined) => (w ? { percent: w.used_percentage, resetsAt: w.resets_at * 1000 } : null);
+    deps.scheduler.recordUsage({ fiveHour: window(parsed.data.rate_limits.five_hour), sevenDay: window(parsed.data.rate_limits.seven_day) });
     return reply.code(204).send();
   });
 
@@ -190,7 +245,11 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     if (!params.success) return badRequest(reply, params.error);
     const run = deps.runs.get(params.data.runId);
     if (!run) return reply.code(404).send({ error: "unknown_run" });
-    return runEvidence(deps.runs.steps(run.id), () => join(run.worktreePath, ".factory", "runs", run.taskId));
+    // After the merge the worktree is gone; the archive holds the same tree, so rebase the step paths onto it.
+    const live = join(run.worktreePath, ".factory", "runs", run.taskId);
+    const root = existsSync(live) ? live : deps.archiveDir(run.id);
+    const steps = deps.runs.steps(run.id).map((step) => (root === live ? step : { ...step, outputPath: join(root, relative(live, step.outputPath)) }));
+    return runEvidence(steps, () => root);
   });
 
   app.get("/runs/:runId", async (request, reply) => {

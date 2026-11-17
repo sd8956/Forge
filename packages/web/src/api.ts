@@ -1,4 +1,6 @@
-import type { RunView, StepView } from "@forge/shared";
+import type { PlanView, QueueView, RunView, StepView } from "@forge/shared";
+
+export type { PlanView, QueueView };
 
 export class UnauthorizedError extends Error {}
 
@@ -59,7 +61,23 @@ export const api = {
   resume: (id: string, opts: { mergeBase?: boolean } = {}) =>
     request<{ message: string }>(`/runs/${id}/resume`, { method: "POST", body: JSON.stringify({ mergeBase: opts.mergeBase ?? false }) }),
   cancel: (id: string) => request<{ message: string }>(`/runs/${id}/cancel`, { method: "POST", body: "{}" }),
+  queue: () => request<QueueView>("/queue"),
+  pauseQueue: (reason = "Paused by a person") => request<QueueView>("/queue/pause", { method: "POST", body: JSON.stringify({ reason }) }),
+  resumeQueue: () => request<QueueView>("/queue/resume", { method: "POST", body: "{}" }),
+  plans: (projectId: string) => request<PlanView[]>(`/projects/${projectId}/plans`),
+  approvePlan: (planId: string) => request<PlanView>(`/plans/${planId}/approve`, { method: "POST", body: "{}" }),
+  rejectPlan: (planId: string) => request<PlanView>(`/plans/${planId}/reject`, { method: "POST", body: "{}" }),
+  orchestrator: (projectId: string) => request<{ session: OrchestratorSession | null }>(`/projects/${projectId}/orchestrator`),
+  startOrchestrator: (projectId: string, prompt?: string) =>
+    request<{ session: OrchestratorSession }>(`/projects/${projectId}/orchestrator`, { method: "POST", body: JSON.stringify(prompt ? { prompt } : {}) }),
+  stopOrchestrator: (projectId: string) => request<{ stopped: boolean }>(`/projects/${projectId}/orchestrator`, { method: "DELETE" }),
 };
+
+export interface OrchestratorSession {
+  projectId: string;
+  tmuxSession: string;
+  startedAt: number;
+}
 
 /** URL of a file in a run's handoff folder (screenshots, reports, output.md). */
 export function runFileUrl(runId: string, path: string): string {

@@ -17,6 +17,9 @@ import { PrWatcher } from "./github/pr-watcher.js";
 import { EngramAdapter, type MemoryAdapter } from "./memory/memory-adapter.js";
 import { Tmux } from "./runner/tmux.js";
 import { archiveDirFor, RunService } from "./runs/run-service.js";
+import { SchedulerService } from "./runs/scheduler-service.js";
+import { PlanStore } from "./db/plan-store.js";
+import { OrchestratorService } from "./orchestrator/orchestrator-service.js";
 import { StepService } from "./steps/step-service.js";
 
 export interface Backend {
@@ -32,6 +35,9 @@ export interface Backend {
   loginLink: () => string;
   watcher: PrWatcher;
   threads: PrThreadStore;
+  plans: PlanStore;
+  scheduler: SchedulerService;
+  orchestrator: OrchestratorService;
   /** Stops the HTTP server and timers. tmux sessions are left running on purpose. */
   close: () => Promise<void>;
 }
@@ -60,14 +66,31 @@ export async function startBackend(config: ForgeConfig, opts: { logger?: boolean
   const service = new StepService({ config, store, tmux, token, log, url: () => url });
   const memory = opts.memory ?? new EngramAdapter(config.engramUrl);
   const threads = new PrThreadStore(db);
-  const runService = new RunService({ config, runs, steps: service, threads, memory, memoryProject: memoryProjectFor, log });
+  // The scheduler is created right after; the run service asks it whether launches are on hold.
+  const schedulerRef: { current?: SchedulerService } = {};
+  const runService = new RunService({
+    config,
+    runs,
+    steps: service,
+    threads,
+    memory,
+    memoryProject: memoryProjectFor,
+    log,
+    launchHold: () => schedulerRef.current?.launchHold() ?? null,
+  });
   const projects = new ProjectStore(db);
+  const plans = new PlanStore(db, Date.now, (event) => bus.publish(event));
+  const queue = new SchedulerService({ config, plans, runs, threads, runService, log });
+  schedulerRef.current = queue;
+  const orchestrator = new OrchestratorService({ config, tmux, plans, token, url: () => url });
+  service.onRateLimit = (step) => queue.onRateLimit(step.id);
   const watcher = new PrWatcher({
     runs,
     threads,
     projects,
     github: opts.github ?? new GhCliClient(config.ghBin),
     runService,
+    onFeedback: () => queue.tick(),
     intervalMs: config.prPollIntervalMs,
     log,
   });
@@ -92,6 +115,10 @@ export async function startBackend(config: ForgeConfig, opts: { logger?: boolean
     webDist: config.webDist,
     archiveDir: (runId) => archiveDirFor(config.home, runId),
     threads,
+    scheduler: queue,
+    plans,
+    orchestrator,
+    config,
     bus,
     tmuxSocket: config.tmuxSocket,
     logger: opts.logger ?? false,
@@ -103,6 +130,11 @@ export async function startBackend(config: ForgeConfig, opts: { logger?: boolean
   await runService.reconcile();
   service.startSweeper();
   watcher.start();
+  queue.start();
+  // A run that changes status may free a slot or a module.
+  const unsubscribe = bus.subscribe((event) => {
+    if (event.entity === "run" && event.type === "transition") void queue.tick();
+  });
 
   return {
     url,
@@ -116,7 +148,12 @@ export async function startBackend(config: ForgeConfig, opts: { logger?: boolean
     loginLink: () => loginUrl({ baseUrl: () => url, codes }),
     watcher,
     threads,
+    plans,
+    scheduler: queue,
+    orchestrator,
     close: async () => {
+      unsubscribe();
+      await queue.stop();
       await watcher.stop();
       await app.close();
       await service.shutdown();

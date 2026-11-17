@@ -15,6 +15,7 @@ export type GuardRule =
   | "redirect"
   | "in_place_edit"
   | "unquoted_glob"
+  | "env_prefix"
   | "outside_worktree";
 
 export type GuardResult = { allow: true } | { allow: false; rule: GuardRule; reason: string };
@@ -27,6 +28,8 @@ const QUOTE_GLOBS =
   "Quote glob patterns (find . -name '*.js'), or use the Glob tool to list files and Grep to search them. An unquoted glob in find, git, sed or sort stops the pipeline on a permission prompt, because it could expand to a flag.";
 /** Commands with write- or exec-capable flags: Claude Code asks about any unquoted glob in them. */
 const GLOB_SENSITIVE = new Set(["find", "git", "sed", "sort"]);
+const NO_ENV_PREFIX =
+  "Do not put NAME=value in front of a command; that form stops the pipeline on a permission prompt. Pass it as an argument instead, for example make e2e EVIDENCE_DIR=.factory/runs/<TASK>/e2e/<attempt>/evidence.";
 const NO_CD = "Do not cd. Run every command from the worktree root with relative paths (git and the tools already run there).";
 
 const deny = (rule: GuardRule, reason: string): GuardResult => ({ allow: false, rule, reason });
@@ -52,6 +55,7 @@ export function guardBash(command: string, worktree: string): GuardResult {
     return deny("variable", LITERAL_VALUES);
   }
   if (/\$\(|`|\$[A-Za-z_{]/.test(noSingle)) return deny("expansion", LITERAL_VALUES);
+  if (/(^|[;&|\n]\s*)[A-Za-z_][A-Za-z0-9_]*=\S*\s+[^\s;&|]/.test(noSingle.replace(/"(?:[^"\\]|\\.)*"/g, '""'))) return deny("env_prefix", NO_ENV_PREFIX);
 
   const code = noSingle.replace(/"(?:[^"\\]|\\.)*"/g, '""');
   if (/(^|[;&|\n]\s*)cd\s/.test(code)) return deny("cd", NO_CD);
@@ -69,8 +73,11 @@ export function guardBash(command: string, worktree: string): GuardResult {
   }
 
   for (const token of code.split(/[\s;&|()<>]+/)) {
-    if (token.startsWith("~")) return outside(token, worktree);
-    if (token.startsWith("/") && !insideWorktree(token, worktree)) return outside(token, worktree);
+    // NAME=/path and --flag=/path name a path too.
+    for (const path of [token, token.slice(token.indexOf("=") + 1)]) {
+      if (path.startsWith("~")) return outside(path, worktree);
+      if (path.startsWith("/") && !insideWorktree(path, worktree)) return outside(path, worktree);
+    }
   }
   return { allow: true };
 }

@@ -17,6 +17,7 @@ export const STEP_EVENTS = [
   "orphaned",
   "cancel",
   "resume_work",
+  "rate_limited",
 ] as const;
 export type StepEvent = (typeof STEP_EVENTS)[number];
 
@@ -45,6 +46,8 @@ export const STEP_TRANSITIONS: readonly Transition[] = [
   { from: ["queued", ...ACTIVE], event: "cancel", to: "failed" },
   // A tool ran or the person typed after the step needed attention: it is working again.
   { from: ["needs_human"], event: "resume_work", to: "running" },
+  // The turn ended on a usage limit (StopFailure rate_limit): the step closes and the run retries it later.
+  { from: ACTIVE, event: "rate_limited", to: "failed" },
 ];
 
 export type TransitionResult =

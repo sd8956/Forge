@@ -60,6 +60,15 @@ describe("decideNext", () => {
     expect(decideNext(pipeline, { security: 2 }, outcome("e2e", "failed"))).toMatchObject({ kind: "launch", attempts: { security: 2, e2e: 1 } });
   });
 
+  it("relaunches a step stopped by a usage limit without spending an attempt", () => {
+    expect(decideNext(pipeline, { security: 2 }, outcome("security", "failed", "rate_limit"))).toEqual({
+      kind: "launch",
+      step: "security",
+      attempts: { security: 2 },
+      reason: "rate_limit",
+    });
+  });
+
   it("retries the same step after an infrastructure failure, even when it has on_fail", () => {
     expect(decideNext(pipeline, {}, outcome("security", "failed", "infrastructure"))).toEqual({
       kind: "launch",

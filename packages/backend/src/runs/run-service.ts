@@ -20,7 +20,7 @@ import { loadPipeline, modelFor, parseTaskSize, stepById, type Pipeline } from "
 import { runShell } from "../runner/shell.js";
 import { branchFor, ensureWorktree } from "../runner/worktree.js";
 import type { StepPolicy, StepService } from "../steps/step-service.js";
-import { parseDependencies, unmergedDependencies } from "./dependencies.js";
+import { parseDependencies, unfinishedDependencyRuns, unmergedDependencies } from "./dependencies.js";
 import { isTrusted } from "./trust.js";
 
 const git = promisify(execFile);
@@ -40,6 +40,8 @@ interface Deps {
   memory: MemoryAdapter;
   /** Engram project of a target project path. */
   memoryProject: (projectPath: string) => string;
+  /** Why no step may launch right now (the queue is paused), or null. */
+  launchHold?: () => string | null;
   now?: () => number;
   log?: (msg: string, extra?: Record<string, unknown>) => void;
 }
@@ -68,7 +70,8 @@ export class RunService implements StepPolicy {
     const pipeline = this.validateProject(projectPath, req.taskId);
     const baseBranch = (await git("git", ["-C", projectPath, "rev-parse", "--abbrev-ref", "HEAD"], { encoding: "utf8" })).stdout.trim();
     const deps = parseDependencies(readFileSync(join(projectPath, ".factory", "backlog", `${req.taskId}.md`), "utf8"));
-    const unmerged = await unmergedDependencies(projectPath, baseBranch, deps);
+    const unfinished = unfinishedDependencyRuns(this.deps.runs.list(), projectPath, deps);
+    const unmerged = [...new Set([...unfinished, ...(await unmergedDependencies(projectPath, baseBranch, deps))])];
     if (unmerged.length) {
       const list = unmerged.join(", ");
       throw new RunRequestError(
@@ -190,6 +193,12 @@ export class RunService implements StepPolicy {
 
     run = this.mustGet(runId);
     if (run.status !== "running") return;
+    const hold = this.deps.launchHold?.() ?? null;
+    if (hold) {
+      // The scheduler advances held runs again when the queue resumes.
+      runs.recordEvent(runId, "launch_held", { step: run.currentStep, reason: hold });
+      return;
+    }
     if (!(await this.agentPreflight(run))) return;
     try {
       await this.launch(run, run.currentStep);
@@ -221,7 +230,8 @@ export class RunService implements StepPolicy {
     const last = run.lastHandledStepId ? history.find((s) => s.id === run.lastHandledStepId) : undefined;
     const lastDef = last ? (modeSteps.find((s) => s.id === last.kind) ?? pipeline.steps.find((s) => s.id === last.kind)) : undefined;
     const failure =
-      last && lastDef && last.status === "failed"
+      // A usage limit is not a failure of the work, so the retry gets no failure context.
+      last && lastDef && last.status === "failed" && last.exitReason !== "rate_limited"
         ? {
             kind: last.kind as StepKind,
             output: rel(last.outputPath),
@@ -526,6 +536,7 @@ export function outcomeOf(step: StepRow): StepOutcome {
   if (step.status === "blocked") return { step: kind, result: "blocked", cause: "reported" };
   if (step.exitReason === "reported_failed") return { step: kind, result: "failed", cause: "reported" };
   if (step.exitReason === "launch_failed") return { step: kind, result: "failed", cause: "launch" };
+  if (step.exitReason === "rate_limited") return { step: kind, result: "failed", cause: "rate_limit" };
   return { step: kind, result: "failed", cause: "infrastructure" };
 }
 

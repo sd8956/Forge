@@ -64,6 +64,22 @@ export const sessionEndHookInput = hookBase.extend({
 });
 export type SessionEndHookInput = z.infer<typeof sessionEndHookInput>;
 
+/** The turn ended on an API error; `error` is the matcher value (rate_limit, server_error, ...). */
+export const stopFailureHookInput = hookBase.extend({
+  hook_event_name: z.literal("StopFailure"),
+  error: z.string().default("unknown"),
+  last_assistant_message: z.string().optional(),
+});
+export type StopFailureHookInput = z.infer<typeof stopFailureHookInput>;
+
+const usageWindow = z.object({ used_percentage: z.number().min(0).max(100), resets_at: z.number().int().positive() });
+/** What Forge's statusLine script forwards from Claude Code's status line input. */
+export const usageReportInput = z.object({
+  session_id: z.string().min(1).optional(),
+  rate_limits: z.looseObject({ five_hour: usageWindow.optional(), seven_day: usageWindow.optional() }),
+});
+export type UsageReportInput = z.infer<typeof usageReportInput>;
+
 export const preToolUseHookInput = hookBase.extend({
   hook_event_name: z.literal("PreToolUse"),
   tool_name: z.string(),
@@ -132,3 +148,68 @@ export interface StepView {
   endedAt: number | null;
   deadlineAt: number | null;
 }
+
+/** Input of the orchestrator's `propose_plan` tool: tasks in waves, each with the modules it touches. */
+export const proposePlanShape = {
+  rationale: z.string().trim().min(1).max(4000).describe("Why this order: dependencies, risk and what can run in parallel"),
+  waves: z
+    .array(
+      z.object({
+        tasks: z
+          .array(
+            z.object({
+              id: z.string().regex(/^TASK-\d{3,}$/),
+              modules: z.array(z.string().trim().min(1).max(200)).max(20).describe("Folders or files the task changes, such as src/server or public"),
+              priority: z.number().int().min(0).max(100).optional(),
+            }),
+          )
+          .min(1),
+      }),
+    )
+    .max(20)
+    .describe("Wave 1 first. A task may depend only on merged tasks or tasks in earlier waves"),
+};
+export const proposePlanInput = z.object(proposePlanShape);
+
+export interface PlanTaskView {
+  id: string;
+  taskId: string;
+  title: string;
+  wave: number;
+  modules: string[];
+  priority: number;
+  dependsOn: string[];
+  state: "planned" | "queued" | "launched" | "cancelled";
+  waitReason: string | null;
+  runId: string | null;
+  runStatus: RunStatus | null;
+}
+
+export interface PlanView {
+  id: string;
+  projectPath: string;
+  status: "proposed" | "approved" | "rejected" | "done" | "cancelled";
+  rationale: string;
+  proposedBy: string;
+  createdAt: number;
+  decidedAt: number | null;
+  tasks: PlanTaskView[];
+}
+
+export interface UsageWindowView {
+  percent: number;
+  resetsAt: number;
+}
+
+export interface QueueView {
+  paused: { reason: string; source: "manual" | "rate_limit"; since: number; until: number | null } | null;
+  usage: { fiveHour: UsageWindowView | null; sevenDay: UsageWindowView | null; reportedAt: number } | null;
+  usagePausePercent: number;
+  maxConcurrency: number;
+  /** Runs holding a session slot (queued, running, needs_human). */
+  active: { runId: string; taskId: string; projectPath: string; status: RunStatus; currentStep: string }[];
+  queued: (PlanTaskView & { planId: string; projectPath: string })[];
+}
+
+export const queuePauseRequest = z.object({ reason: z.string().trim().min(1).max(200).default("Paused by a person") });
+export const orchestratorStartRequest = z.object({ prompt: z.string().trim().max(4000).optional() });

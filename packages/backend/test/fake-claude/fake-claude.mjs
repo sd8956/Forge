@@ -6,7 +6,8 @@
 //
 // FAKE_CLAUDE_SCRIPT: JSON {"<step kind>" or "<TASK>:<step kind>": ["<behaviour for attempt 1>", ...], "default": "done"}
 // Behaviours: done, failed, blocked, stop-then-report, never-report, permission, wait-release,
-// bad-output-then-fix, exit-without-report, crash, hang.
+// bad-output-then-fix, exit-without-report, crash, hang, rate-limit (StopFailure rate_limit, then idle).
+// FAKE_USAGE_PERCENT: when set, the fake runs the settings' statusLine once with that 5-hour usage.
 // FAKE_CLAUDE_TRACE: JSONL file where the fake logs what it saw.
 import { execFileSync } from "node:child_process";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -224,7 +225,22 @@ async function finish(status) {
   await stop();
 }
 
+/** Runs the settings' status line once, as Claude Code does after the first API response. */
+function statusLine() {
+  const percent = process.env.FAKE_USAGE_PERCENT;
+  if (!settings.statusLine?.command || percent === undefined) return;
+  const resetsAt = Math.floor(Date.now() / 1000) + Number(process.env.FAKE_USAGE_RESETS_IN_S ?? 3600);
+  const status = { session_id: sessionId, model: { id: "fake" }, rate_limits: { five_hour: { used_percentage: Number(percent), resets_at: resetsAt } } };
+  try {
+    const shown = execFileSync("sh", ["-c", settings.statusLine.command], { input: JSON.stringify(status), encoding: "utf8", timeout: 5000 });
+    trace("status_line", { shown: shown.trim() });
+  } catch (error) {
+    trace("status_line_failed", { message: String(error) });
+  }
+}
+
 async function main() {
+  statusLine();
   switch (behaviour) {
     case "done":
     case "failed":
@@ -277,6 +293,10 @@ async function main() {
       process.exit(3);
       return;
     case "hang":
+      break;
+    case "rate-limit":
+      // Claude Code ends the turn on a usage limit and waits; only the StopFailure hook says why.
+      await hook("StopFailure", { error: "rate_limit", last_assistant_message: "You've hit your usage limit" });
       break;
     default:
       throw new Error(`Unknown behaviour ${behaviour}`);

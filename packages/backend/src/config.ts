@@ -31,6 +31,12 @@ export interface ForgeConfig {
   ghBin: string;
   /** Default interval between PR polls. */
   prPollIntervalMs: number;
+  /** Sessions the scheduler runs at once, across projects. */
+  maxConcurrency: number;
+  /** The scheduler stops launching while the 5-hour usage window is at or above this percentage. */
+  usagePausePercent: number;
+  /** How often the scheduler looks at the queue (it also wakes on run events). */
+  schedulerIntervalMs: number;
 }
 
 function intFromEnv(value: string | undefined, fallback: number): number {
@@ -59,6 +65,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, cwd = process.c
     webDist: resolve(env.FORGE_WEB_DIST ?? join(import.meta.dirname, "..", "..", "web", "dist")),
     ghBin: env.FORGE_GH_BIN ?? "gh",
     prPollIntervalMs: intFromEnv(env.FORGE_PR_POLL_MS, 120_000),
+    maxConcurrency: Math.max(1, intFromEnv(env.FORGE_MAX_CONCURRENCY, 3)),
+    usagePausePercent: intFromEnv(env.FORGE_USAGE_PAUSE_PERCENT, 90),
+    schedulerIntervalMs: intFromEnv(env.FORGE_SCHEDULER_INTERVAL_MS, 5000),
   };
 }
 
