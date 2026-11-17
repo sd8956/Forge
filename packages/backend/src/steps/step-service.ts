@@ -315,9 +315,13 @@ export class StepService {
 
   /** Marks live steps whose tmux session disappeared without a SessionEnd hook. */
   async sweep(): Promise<void> {
+    // Read the live steps before the session list: a step launched while tmux answers
+    // is not in this snapshot of steps, so it can never be mistaken for a vanished one.
+    const live = this.store.listLive();
     const sessions = new Set(await this.deps.tmux.listSessions());
-    for (const step of this.store.listLive()) {
+    for (const step of live) {
       if (step.status === "queued" || sessions.has(step.tmuxSession)) continue;
+      if (this.store.get(step.id)?.status !== step.status) continue; // changed meanwhile
       const exitCode = this.readExitCode(step.id);
       this.clearTimeout(step.id);
       this.transition(step.id, "session_ended", { exitReason: "session_vanished", endedAt: this.now() }, { exitCode });
