@@ -53,6 +53,14 @@ describe("diffSnapshot", () => {
     expect(result.threads).toEqual([]);
   });
 
+  it("accepts every author with \"*\", still skipping Forge's own replies", () => {
+    const result = diffSnapshot(
+      { ...base, issueComments: [{ id: 1, login: "anyone", body: "x", url: "u" }, { id: 2, login: "sd8956", body: `done ${FORGE_REPLY_MARKER}`, url: "u" }] },
+      { known: new Set(), allowedAuthors: ["*"] },
+    );
+    expect(result.threads.map((t) => t.externalId)).toEqual(["issue_comment:1"]);
+  });
+
   it("handles nobody when no author is allowed", () => {
     expect(diffSnapshot({ ...base, issueComments: [{ id: 1, login: "sd8956", body: "x", url: "u" }] }, { known: new Set(), allowedAuthors: [] }).threads).toEqual([]);
   });

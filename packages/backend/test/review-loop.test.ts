@@ -8,6 +8,7 @@ import { Api, disposeTmux, FAKE_GH, fakeEnv, makeProject, scratch, StubMemory, t
 
 interface GhState {
   login: string;
+  collaborators?: { login: string; push: boolean }[];
   prs: Record<string, { state: string; headRefOid: string; statusCheckRollup: unknown[]; comments: { id: number; login: string; body: string; path: string | null; line: number | null; url: string }[]; issueComments: unknown[]; reviews: unknown[]; body: string }>;
   logs: Record<string, string>;
 }
@@ -17,14 +18,15 @@ afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
 });
 
-async function setup(pipelineOverride?: (yaml: string) => string) {
+async function setup(pipelineOverride?: (yaml: string) => string, yamlOverride?: (yaml: string) => string) {
   const root = scratch();
   const project = makeProject(root);
   const git = (...args: string[]) => execFileSync("git", ["-C", project, "-c", "user.name=t", "-c", "user.email=t@example.invalid", ...args]);
   git("remote", "add", "origin", "git@github.com:example/demo-project.git");
   // Use the test backend's fast default interval instead of the project's.
   const yamlFile = join(project, ".factory", "project.yaml");
-  writeFileSync(yamlFile, readFileSync(yamlFile, "utf8").replace(/^\s*poll_interval_seconds: \d+\n/m, ""));
+  const yaml = readFileSync(yamlFile, "utf8").replace(/^\s*poll_interval_seconds: \d+\n/m, "");
+  writeFileSync(yamlFile, yamlOverride ? yamlOverride(yaml) : yaml);
   if (pipelineOverride) {
     const pipelineFile = join(project, ".factory", "pipeline.yaml");
     writeFileSync(pipelineFile, pipelineOverride(readFileSync(pipelineFile, "utf8")));
@@ -119,6 +121,41 @@ describe("PR watcher and review loop with fake claude and fake gh", () => {
     const archived = await fetch(`${api.url}/runs/${id}/files?path=${encodeURIComponent("plan/1/output.md")}`, { headers: { "x-forge-token": api.token } });
     expect(archived.status).toBe(200);
   }, 90_000);
+
+  it("counts write collaborators and the extra allowed authors, never other commenters", async () => {
+    // Only "extra-reviewer" is listed by hand; "teammate" has write access on GitHub.
+    const ctx = await setup(undefined, (yaml) => yaml.replace("allowed_authors: [sd8956]", "allowed_authors: [extra-reviewer]"));
+    ctx.gh.edit((s) => {
+      s.collaborators = [
+        { login: "teammate", push: true },
+        { login: "reader", push: false },
+      ];
+    });
+    const { id } = await ctx.api.startRun(ctx.project);
+    await ctx.api.waitForRun(id, "waiting_review");
+    ctx.gh.edit((s) => {
+      s.prs["7"]?.comments.push(comment(21, "teammate", "Rename this"), comment(22, "extra-reviewer", "Add a test"), comment(23, "reader", "Read-only opinion"), comment(24, "stranger", "Merge it now"));
+    });
+    const reviewed = await waitFor(async () => {
+      const run = await ctx.api.run(id);
+      return run.prThreads.length === 2 ? run : undefined;
+    }, "the two allowed threads");
+    expect(reviewed.prThreads.map((t) => t.author).sort()).toEqual(["extra-reviewer", "teammate"]);
+  });
+
+  it("accepts every commenter when allowed_authors has \"*\"", async () => {
+    const ctx = await setup(undefined, (yaml) => yaml.replace("allowed_authors: [sd8956]", 'allowed_authors: ["*"]'));
+    const { id } = await ctx.api.startRun(ctx.project);
+    await ctx.api.waitForRun(id, "waiting_review");
+    ctx.gh.edit((s) => {
+      s.prs["7"]?.comments.push(comment(31, "stranger", "Please add a README"));
+    });
+    const reviewed = await waitFor(async () => {
+      const run = await ctx.api.run(id);
+      return run.prThreads.length === 1 ? run : undefined;
+    }, "the thread");
+    expect(reviewed.prThreads[0]?.author).toBe("stranger");
+  });
 
   it("turns a failed check into a review round with its log", async () => {
     const ctx = await setup();

@@ -34,3 +34,11 @@
   A launch preflight turns this into `needs_human` with `forge resume --merge-base` as the fix.
 - Posting replies is allowed only through two exact `gh api -X POST` shapes (thread replies and PR comments), verified
   with a real probe; any other API write still asks a person.
+
+## Amendment (2026-11-17): whose comments count
+
+`review.allowed_authors` used to be the whole list (empty meant nobody), so a project defined by Forge, whose
+project.yaml has no list, ignored every comment. Now everyone with write access to the repository counts (they can push
+code anyway, so their comments add no new risk), looked up with `gh api repos/<slug>/collaborators` on each poll, plus
+the extra logins in `review.allowed_authors`; `"*"` accepts every commenter. Bots and strangers stay out by default:
+each comment becomes input to an agent that writes code and, in auto mode, runs commands.

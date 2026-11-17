@@ -82,6 +82,8 @@ if (cmd === "pr" && sub === "view") {
     lines(pr(m[1]).comments.map(({ id, login, body, path: p, line, url }) => ({ id, login, body, path: p, line, url })));
   } else if ((m = /issues\/(\d+)\/comments$/.exec(path))) {
     lines(pr(m[1]).issueComments.map(({ id, login, body, url }) => ({ id, login, body, url })));
+  } else if (/\/collaborators$/.test(path)) {
+    lines((state.collaborators ?? []).map(({ login, push }) => ({ login, push })));
   } else if ((m = /pulls\/(\d+)\/reviews$/.exec(path))) {
     lines(pr(m[1]).reviews.map(({ id, login, body, state: s, url }) => ({ id, login, body, state: s, url })));
   } else {

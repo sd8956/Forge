@@ -22,7 +22,10 @@ export const projectConfigSchema = z.looseObject({
     .default({ permission_mode: "auto" }),
   review: z
     .looseObject({
-      /** GitHub logins whose PR comments the review loop handles. Empty means nobody. */
+      /**
+       * Extra GitHub logins whose PR comments the review loop handles, besides everyone with write access to the
+       * repository (always included). `"*"` accepts every commenter.
+       */
       allowed_authors: z.array(z.string().min(1)).default([]),
       /** Seconds between PR polls for this project. */
       poll_interval_seconds: z.number().int().min(10).max(3600).optional(),
