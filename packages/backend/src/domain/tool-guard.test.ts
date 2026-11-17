@@ -24,6 +24,10 @@ describe("guardTool: Bash commands that stopped the F1 runs are denied with a co
     ["redirect", "echo hi >> notes.md", "Write"],
     ["in_place_edit", "sed -i 's/a/b/' src/server.js", "Write"],
     ["in_place_edit", "git diff | tee diff.txt", "Write"],
+    ["unquoted_glob", "find .claude/skills .factory/backlog/TASK-003.md e2e src test package.json Makefile playwright.config.* -maxdepth 2", "Glob"],
+    ["unquoted_glob", "find . -name *.js", "Glob"],
+    ["unquoted_glob", "git add src/*.js", "quote"],
+    ["unquoted_glob", "sort data/*.csv", "quote"],
     ["outside_worktree", "ls ~/.claude/skills .claude/skills 2>/dev/null", "worktree"],
     ["outside_worktree", "cat /etc/passwd", "worktree"],
   ];
@@ -56,6 +60,10 @@ describe("guardTool: commands that ran without a prompt stay allowed", () => {
     "cat src/server.js public/app.js 2>/dev/null",
     `git commit -m "docs: explain a > b and $HOME in prose"`.replace("$HOME", "home"),
     `ls ${WT}/src`,
+    "find . -name '*.js'",
+    `find e2e -name "*.spec.js" -type f`,
+    "ls src/*.js",
+    "wc -l src/*.js",
   ];
 
   it.each(allowed)("%s", (command) => {

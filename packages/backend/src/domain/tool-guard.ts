@@ -14,6 +14,7 @@ export type GuardRule =
   | "cd"
   | "redirect"
   | "in_place_edit"
+  | "unquoted_glob"
   | "outside_worktree";
 
 export type GuardResult = { allow: true } | { allow: false; rule: GuardRule; reason: string };
@@ -22,6 +23,10 @@ const WRITE_WITH_TOOLS =
   "Forge steps write files only with the Write and Edit tools. Use Write or Edit instead of heredocs, redirects, inline scripts or in-place edits; those Bash forms stop the pipeline on a permission prompt.";
 const LITERAL_VALUES =
   "Use literal values instead of shell variables, $(...) or backticks: type the path, commit or value from input.md directly. Expansions stop the pipeline on a permission prompt.";
+const QUOTE_GLOBS =
+  "Quote glob patterns (find . -name '*.js'), or use the Glob tool to list files and Grep to search them. An unquoted glob in find, git, sed or sort stops the pipeline on a permission prompt, because it could expand to a flag.";
+/** Commands with write- or exec-capable flags: Claude Code asks about any unquoted glob in them. */
+const GLOB_SENSITIVE = new Set(["find", "git", "sed", "sort"]);
 const NO_CD = "Do not cd. Run every command from the worktree root with relative paths (git and the tools already run there).";
 
 const deny = (rule: GuardRule, reason: string): GuardResult => ({ allow: false, rule, reason });
@@ -52,6 +57,11 @@ export function guardBash(command: string, worktree: string): GuardResult {
   if (/(^|[;&|\n]\s*)cd\s/.test(code)) return deny("cd", NO_CD);
   if (/\b(python3?|node|perl|ruby|deno|bun)(\s+-[A-Za-z]+)*?\s+(-c|-e|-p|--eval|--print|-)(\s|$)/.test(code)) return deny("inline_script", WRITE_WITH_TOOLS);
   if (/\bsed\s+(-[a-zA-Z]*i|--in-place)\b/.test(code) || /(^|[|;&\n]\s*)tee\b/.test(code)) return deny("in_place_edit", WRITE_WITH_TOOLS);
+
+  for (const part of code.split(/[;&|\n]+/)) {
+    const [program, ...args] = part.trim().split(/\s+/);
+    if (program && GLOB_SENSITIVE.has(program) && args.some((a) => /[*?[]/.test(a))) return deny("unquoted_glob", QUOTE_GLOBS);
+  }
 
   for (const match of code.matchAll(/(^|[^0-9&<>])>>?\s*([^\s;&|]+)/g)) {
     const target = match[2] ?? "";
