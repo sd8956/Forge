@@ -10,7 +10,6 @@ interface GhState {
   login: string;
   prs: Record<string, { state: string; headRefOid: string; statusCheckRollup: unknown[]; comments: { id: number; login: string; body: string; path: string | null; line: number | null; url: string }[]; issueComments: unknown[]; reviews: unknown[]; body: string }>;
   logs: Record<string, string>;
-  calls: string[][];
 }
 
 const cleanups: (() => Promise<void> | void)[] = [];
@@ -37,7 +36,6 @@ async function setup(pipelineOverride?: (yaml: string) => string) {
     login: "sd8956",
     prs: { "7": { state: "OPEN", headRefOid: "abc1234", statusCheckRollup: [], comments: [], issueComments: [], reviews: [], body: "" } },
     logs: { "99": "npm ERR! test failed: TC-03" },
-    calls: [],
   };
   writeFileSync(ghState, JSON.stringify(state));
   const env = { ...fakeEnv(root), FAKE_GH_STATE: ghState, FAKE_GH_BIN: FAKE_GH };

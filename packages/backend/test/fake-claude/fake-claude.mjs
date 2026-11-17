@@ -4,7 +4,7 @@
 // that step kind, sends the hooks from --settings over HTTP and calls report_step through the
 // --mcp-config server.
 //
-// FAKE_CLAUDE_SCRIPT: JSON {"<step kind>": ["<behaviour for attempt 1>", "<attempt 2>", ...], "default": "done"}
+// FAKE_CLAUDE_SCRIPT: JSON {"<step kind>" or "<TASK>:<step kind>": ["<behaviour for attempt 1>", ...], "default": "done"}
 // Behaviours: done, failed, blocked, stop-then-report, never-report, permission, wait-release,
 // bad-output-then-fix, exit-without-report, crash, hang.
 // FAKE_CLAUDE_TRACE: JSONL file where the fake logs what it saw.
@@ -63,7 +63,8 @@ const taskId = /^# Step input: \S+ — (TASK-\d+)/m.exec(input)?.[1];
 const template = parse(/```yaml\n---\n([\s\S]*?)\n---\n```/.exec(input)?.[1] ?? "{}") ?? {};
 
 const script = JSON.parse(process.env.FAKE_CLAUDE_SCRIPT ?? "{}");
-const behaviour = script[kind]?.[attempt - 1] ?? script.default ?? "done";
+// "TASK-003:plan" beats "plan", so one backend can run different scripts per task.
+const behaviour = script[`${taskId}:${kind}`]?.[attempt - 1] ?? script[kind]?.[attempt - 1] ?? script.default ?? "done";
 
 // Something on the screen for the terminal bridge, and a record of what a person types.
 process.stdout.write(`fake claude ready: ${kind} attempt ${attempt}\r\n`);

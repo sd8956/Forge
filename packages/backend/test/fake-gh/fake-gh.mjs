@@ -1,9 +1,11 @@
 #!/usr/bin/env node
 // Fake `gh` for integration tests. State lives in the JSON file FAKE_GH_STATE, which tests edit:
 // { login, prs: { "<n>": { state, headRefOid, statusCheckRollup, comments, issueComments, reviews, body } },
-//   logs: { "<actions run id>": "log" }, calls: [] }
+//   logs: { "<actions run id>": "log" } }
+// Only commands that change something write the state back, so a test editing the file while the
+// watcher reads it never loses its edit. Every call is appended to FAKE_GH_STATE.calls (JSONL).
 // It implements exactly the gh commands Forge and the fake claude use.
-import { readFileSync, renameSync, writeFileSync } from "node:fs";
+import { appendFileSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 
 const file = process.env.FAKE_GH_STATE;
 if (!file) {
@@ -12,9 +14,11 @@ if (!file) {
 }
 const state = JSON.parse(readFileSync(file, "utf8"));
 const args = process.argv.slice(2);
-state.calls = [...(state.calls ?? []), args];
+appendFileSync(`${file}.calls`, `${JSON.stringify(args)}\n`);
 
+let changed = false;
 const save = () => {
+  if (!changed) return;
   writeFileSync(`${file}.tmp`, JSON.stringify(state, null, 2));
   renameSync(`${file}.tmp`, file);
 };
@@ -49,6 +53,7 @@ if (cmd === "pr" && sub === "view") {
   process.stdout.write(JSON.stringify(out));
 } else if (cmd === "pr" && sub === "edit") {
   pr(args[2]).body = readFileSync(flag("--body-file"), "utf8");
+  changed = true;
 } else if (cmd === "run" && sub === "view") {
   process.stdout.write(state.logs?.[args[2]] ?? "");
 } else if (cmd === "api") {
@@ -60,11 +65,13 @@ if (cmd === "pr" && sub === "view") {
     const parent = p.comments.find((c) => c.id === Number(m[2]));
     const reply = { id: nextId(), login: state.login, body: field("body"), path: parent?.path ?? null, line: parent?.line ?? null, url: `https://github.com/r/pull/${m[1]}#discussion_r${state.nextId}` };
     p.comments.push(reply);
+    changed = true;
     process.stdout.write(JSON.stringify({ id: reply.id }));
   } else if (post && (m = /issues\/(\d+)\/comments$/.exec(path))) {
     const p = pr(m[1]);
     const comment = { id: nextId(), login: state.login, body: field("body"), url: `https://github.com/r/pull/${m[1]}#issuecomment-${state.nextId}` };
     p.issueComments.push(comment);
+    changed = true;
     process.stdout.write(JSON.stringify({ id: comment.id }));
   } else if ((m = /pulls\/(\d+)\/comments$/.exec(path))) {
     lines(pr(m[1]).comments.map(({ id, login, body, path: p, line, url }) => ({ id, login, body, path: p, line, url })));

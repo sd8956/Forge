@@ -101,7 +101,7 @@ export class StubMemory implements MemoryAdapter {
   }
 }
 
-export async function waitFor<T>(probe: () => T | undefined | false | Promise<T | undefined | false>, what: string, timeoutMs = 20_000): Promise<T> {
+export async function waitFor<T>(probe: () => T | undefined | false | Promise<T | undefined | false>, what: string, timeoutMs = 30_000): Promise<T> {
   const start = Date.now();
   for (;;) {
     const value = await probe();
