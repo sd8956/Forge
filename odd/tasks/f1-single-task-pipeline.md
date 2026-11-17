@@ -39,7 +39,7 @@ Objective: Phase 1. One backlog task runs plan → design → development → se
 | T7 | S9 | inline | done | a82b372 |
 | T8 | S5, S6, S8 | inline | done | 38793c4 |
 | T9 | S10 | inline | done | 7023930 |
-| T10 | S10, S11, S13 | inline | pending | |
+| T10 | S10, S11, S13 | inline | done | 8e0a370, 0b2867c, docs/runs/f1.md |
 
 T0 CLAUDE.md + scanners; T1 pipeline loader; T2 run machine + next-action; T3 run table; T4 handoff + output.md validation; T5 memory adapter; T6 RunService (advance, reconcile, resume, make check gate); T7 CLI; T8 fixture web app, agents, skills, settings; T9 fake-claude integration; T10 real runs + docs/runs/f1.md. Route evidence: units depend on each other; no Writer trigger; all inline.
 
@@ -49,4 +49,6 @@ T0 CLAUDE.md + scanners; T1 pipeline loader; T2 run machine + next-action; T3 ru
 - L2 (2026-11-16) User: "Si apruebo el plan". Approved: plan as presented (pipeline.yaml and output.md schemas, backend-validated exit criteria at report_step, attempt directories, skill subset ADR), plus `brew install semgrep gitleaks osv-scanner`, Playwright Chromium download to `~/.cache/ms-playwright`, and creating private repo `sd8956/forge-sandbox` with `gh`.
 - L3 Findings before code: repo has no `CLAUDE.md` (only the fixture's); demo fixture is a CLI, so it becomes a minimal web app for Playwright; Engram HTTP API verified live on 127.0.0.1:7437 (`GET /search?q=&project=`, `GET /observations?project=`; no topic_key filter).
 - L4 (2026-11-16) Implementation T0–T9 done; 125 tests green 3× in a row; lint/typecheck green. Bug found by integration tests: same tmux name per step let the delayed close of attempt n kill attempt n+1; sessions now named `forge-<TASK>-<step>-<attempt>` (ADR 0004). ADRs 0004 (backend validates outputs, attempt dirs) and 0005 (skills subset, web fixture, run-task CLI, trust preflight, Engram scope). Tools installed: semgrep 1.185.0, gitleaks 8.30.1, osv-scanner 2.7.1, Playwright chromium-1255.
-- Next: T10 — create private repo sd8956/forge-sandbox, sandbox copy, real full run (TASK-001), forced failure run (seeded secret on feat/TASK-002), docs/runs/f1.md.
+- L5 (2026-11-16) Real run 1 TASK-001: 6 sessions, ~18 min, PR sandbox#1, 12 operator prompts + 1 denial. Fixes between runs: literal base commit in input.md, prompt-free security/e2e/evidence commands, osv `--lockfile` (recursive scan is blind inside the ignored `.worktrees/`), no-Bash-writes rule. Forced failure changed from a seeded secret to a seeded reflected XSS (a secret would stay in history and need a rewrite the developer cannot do).
+- L6 (2026-11-16) Real run 2 TASK-002: security#1 failed (XSS, found by manual review; semgrep missed it), development#2 fixed it, security#2 passed, PR sandbox#2; 8 sessions, ~7 min, 1 prompt. All 14 output.md valid; Engram refs TASK-001/{plan,design}, TASK-002/{plan,design,security}. Exit gate passed; report in docs/runs/f1.md.
+- Next: user decides push/PR of feat/f1-single-task-pipeline.
