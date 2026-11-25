@@ -70,7 +70,13 @@ const STATUS_LINE_SCRIPT = join(import.meta.dirname, "..", "..", "scripts", "for
  * that forwards the usage window. The status line reads the URL and token from
  * a private file, so the token never appears in a command line.
  */
-export function withForgeSignals(settings: Record<string, unknown>, url: string, token: string, statusLineConfig: string, opts: { auto: boolean } = { auto: false }): Record<string, unknown> {
+export function withForgeSignals(
+  settings: Record<string, unknown>,
+  url: string,
+  token: string,
+  statusLineConfig: string,
+  opts: { auto: boolean; apiKeyHelper?: string | null } = { auto: false },
+): Record<string, unknown> {
   const hooks = { ...((settings.hooks as Record<string, unknown> | undefined) ?? {}) };
   // Bypass is never allowed. Auto is locked unless the step runs in auto, so "switch to auto mode" in a prompt does nothing.
   const permissions: Record<string, unknown> = { ...((settings.permissions as Record<string, unknown> | undefined) ?? {}), disableBypassPermissionsMode: "disable" };
@@ -78,6 +84,8 @@ export function withForgeSignals(settings: Record<string, unknown>, url: string,
   hooks.StopFailure = [{ hooks: [{ type: "http", url: `${url}/hooks/stop-failure`, headers: { "x-forge-token": token }, timeout: 10 }] }];
   return {
     ...settings,
+    // With an API key in Settings, Claude Code runs this command for the key instead of using the subscription login.
+    ...(opts.apiKeyHelper ? { apiKeyHelper: opts.apiKeyHelper } : {}),
     permissions,
     hooks,
     statusLine: { type: "command", command: [process.execPath, STATUS_LINE_SCRIPT, statusLineConfig].map(shellQuote).join(" "), padding: 0 },
@@ -113,6 +121,8 @@ interface Deps {
  */
 export class StepService {
   policy: StepPolicy = NO_POLICY;
+  /** The `apiKeyHelper` command when Settings use an API key; null keeps the subscription login. */
+  apiKeyHelper: () => string | null = () => null;
   /** Called after a step stopped on a usage limit; the scheduler pauses the queue. */
   onRateLimit: (step: StepRow) => void = () => undefined;
   private readonly timers = new Map<string, NodeJS.Timeout>();
@@ -194,7 +204,7 @@ export class StepService {
     const rendered = readFileSync(settingsTemplate, "utf8").replaceAll("{{FORGE_URL}}", url).replaceAll("{{FORGE_TOKEN}}", this.deps.token);
     const statusLineConfig = join(dir, "statusline.json");
     writeFileSync(statusLineConfig, JSON.stringify({ url: `${url}/hooks/usage`, token: this.deps.token }), { mode: 0o600 });
-    const settings = JSON.stringify(withForgeSignals(JSON.parse(rendered) as Record<string, unknown>, url, this.deps.token, statusLineConfig, { auto }), null, 2);
+    const settings = JSON.stringify(withForgeSignals(JSON.parse(rendered) as Record<string, unknown>, url, this.deps.token, statusLineConfig, { auto, apiKeyHelper: this.apiKeyHelper() }), null, 2);
     const mcp = {
       mcpServers: {
         factory: { type: "http", url: `${url}/mcp/${row.id}`, headers: { "x-forge-token": this.deps.token } },

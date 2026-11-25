@@ -12,7 +12,8 @@ through the Forge panel and approves your work, or asks for changes, when you re
 Start by reading the `input.md` your first message names. It lists what to read, what to write and how to
 report.
 
-- A tool per platform: Playwright for the web, HTTP tests for APIs, unit tests for the domain.
+- A tool per platform: Playwright for the web, Maestro on an emulator or simulator for mobile (android, ios), HTTP
+  tests for APIs, unit tests for the domain. For mobile, name the app id, the device and how `make e2e` boots it.
 - Environments, seed data and how to start the app (`make up`).
 - A table of case types with the evidence each must leave (screenshot per step, request and response, report). No PR opens without that evidence.
 - Write only inside `.factory/` (never `.factory/steps/`), with the Write and Edit tools. You have no Bash.

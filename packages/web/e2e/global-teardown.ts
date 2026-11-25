@@ -5,10 +5,12 @@ import { STATE_FILE, type E2eState } from "./global-setup.js";
 
 export default function globalTeardown(): void {
   const state = JSON.parse(readFileSync(STATE_FILE, "utf8")) as E2eState;
-  try {
-    process.kill(state.pid, "SIGKILL");
-  } catch {
-    // already gone
+  for (const pid of [state.pid, state.engramPid]) {
+    try {
+      process.kill(pid, "SIGKILL");
+    } catch {
+      // already gone
+    }
   }
   try {
     execFileSync("tmux", ["-L", state.socket, "kill-server"], { stdio: "ignore" });

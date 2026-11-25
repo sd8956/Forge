@@ -28,6 +28,7 @@ interface Deps {
   plans: PlanStore;
   token: string;
   url: () => string;
+  apiKeyHelper?: () => string | null;
   now?: () => number;
 }
 
@@ -75,9 +76,11 @@ export class OrchestratorService {
       .replaceAll("{{FORGE_URL}}", url)
       .replaceAll("{{FORGE_TOKEN}}", this.deps.token)
       .replaceAll("{{FORGE_HOME}}", this.deps.config.home);
-    JSON.parse(settings);
+    const parsed = JSON.parse(settings) as Record<string, unknown>;
+    const helper = this.deps.apiKeyHelper?.() ?? null;
+    const rendered = JSON.stringify(helper ? { ...parsed, apiKeyHelper: helper } : parsed, null, 2);
     const files = { settings: join(dir, "settings.json"), mcp: join(dir, "mcp.json") };
-    writeFileSync(files.settings, settings, { mode: 0o600 });
+    writeFileSync(files.settings, rendered, { mode: 0o600 });
     writeFileSync(
       files.mcp,
       JSON.stringify({ mcpServers: { factory: { type: "http", url: `${url}/mcp/orchestrator/${project.id}`, headers: { "x-forge-token": this.deps.token } } } }, null, 2),

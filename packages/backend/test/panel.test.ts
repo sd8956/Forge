@@ -152,3 +152,32 @@ describe("panel files", () => {
     }
   });
 });
+
+describe("memory panel", () => {
+  it("lists, searches and filters a project's memories by task or step, linking each to its run", async () => {
+    const root = scratch();
+    const project = makeProject(root, { pipeline: PLAN_ONLY_PIPELINE });
+    const mem = (id: number, title: string, ref: string | null) => ({ id, title, type: "learning", content: `**What**: ${title}${ref ? `\nRef: ${ref}` : ""}`, project: "demo-project", createdAt: "2026-11-17 10:00:00", ref });
+    const memory = new StubMemory([mem(1, "store seam", "TASK-001/plan"), mem(2, "review feedback", "TASK-001/review"), mem(3, "e2e conventions", "TASK-002/e2e"), mem(4, "general note", null)]);
+    const config = testConfig(root, { extraEnv: fakeEnv(root, { plan: ["done"] }) });
+    const tmux = new Tmux(config.tmuxSocket);
+    const backend = await startBackend(config, { memory });
+    try {
+      const api = new Api(backend.url, backend.token);
+      const { id: projectId } = (await api.request("POST", "/projects", { path: project })).body as { id: string };
+      const run = await api.startRun(project);
+      const list = async (query = "") => (await api.request("GET", `/projects/${projectId}/memories${query}`)).body as { available: boolean; items: { id: number; ref: string | null; runId: string | null }[] };
+      expect((await list()).items.map((m) => m.id)).toEqual([1, 2, 3, 4]);
+      expect((await list("?ref=TASK-001")).items.map((m) => m.id)).toEqual([1, 2]);
+      expect((await list("?ref=TASK-001/review")).items).toEqual([expect.objectContaining({ id: 2, runId: run.id })]);
+      expect((await list("?q=conventions")).items.map((m) => m.id)).toEqual([3]);
+      // TASK-002 has no run yet.
+      expect((await list("?ref=TASK-002")).items[0]?.runId).toBeNull();
+      expect((await api.request("GET", `/projects/${projectId}/memories?ref=../etc`)).status).toBe(400);
+    } finally {
+      await backend.close();
+      await disposeTmux(tmux, config.tmuxSocket);
+      rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+    }
+  }, 60_000);
+});
