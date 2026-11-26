@@ -1,11 +1,11 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { rmSync, writeFileSync } from "node:fs";
+import { writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { readToken } from "../src/auth.js";
 import { Tmux } from "../src/runner/tmux.js";
-import { Api, FAKE_CLAUDE, disposeTmux, type RunDetail, REPO_ROOT, fakeEnv, makeProject, scratch, waitFor } from "./helpers.js";
+import { Api, FAKE_CLAUDE, disposeTmux, type RunDetail, REPO_ROOT, fakeEnv, makeProject, scratch, waitFor, removeScratch } from "./helpers.js";
 
 // `node --import tsx` keeps the backend in one process, so SIGKILL really kills it
 // (the tsx CLI would spawn a child that survives its parent).
@@ -54,7 +54,7 @@ async function prepare(script: Record<string, string[]>): Promise<Env> {
     ...fakeEnv(root, script),
   };
   const tmux = new Tmux(socket);
-  cleanups.push(() => rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
+  cleanups.push(() => removeScratch(root));
   cleanups.push(() => disposeTmux(tmux, socket));
   return { root, project, env, tmux, url: `http://127.0.0.1:${port}` };
 }

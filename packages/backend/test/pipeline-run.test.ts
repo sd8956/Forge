@@ -1,12 +1,12 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { startBackend } from "../src/app.js";
 import { parseFrontmatter } from "../src/handoff/frontmatter.js";
 import { commonFrontmatter } from "../src/handoff/output-validator.js";
 import { Tmux } from "../src/runner/tmux.js";
-import { Api, disposeTmux, fakeEnv, makeProject, readTrace, scratch, StubMemory, testConfig, waitFor, type RunDetail } from "./helpers.js";
+import { Api, disposeTmux, fakeEnv, makeProject, readTrace, scratch, StubMemory, testConfig, waitFor, type RunDetail, removeScratch } from "./helpers.js";
 
 const cleanups: (() => Promise<void> | void)[] = [];
 afterEach(async () => {
@@ -20,7 +20,7 @@ async function setup(script: Record<string, string[] | string> = {}, overrides: 
   const tmux = new Tmux(config.tmuxSocket);
   const memory = new StubMemory([{ id: 1, title: "store seam", type: "decision", content: "Ref: TASK-001/plan", project: "demo-project", createdAt: "now", ref: "TASK-001/plan" }]);
   const backend = await startBackend(config, { memory });
-  cleanups.push(() => rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
+  cleanups.push(() => removeScratch(root));
   cleanups.push(() => disposeTmux(tmux, config.tmuxSocket));
   cleanups.push(() => backend.close());
   return { root, project, backend, tmux, api: new Api(backend.url, backend.token) };

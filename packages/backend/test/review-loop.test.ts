@@ -1,10 +1,10 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { startBackend, type Backend } from "../src/app.js";
 import { Tmux } from "../src/runner/tmux.js";
-import { Api, disposeTmux, FAKE_GH, fakeEnv, makeProject, scratch, StubMemory, testConfig, waitFor, type RunDetail } from "./helpers.js";
+import { Api, disposeTmux, FAKE_GH, fakeEnv, makeProject, scratch, StubMemory, testConfig, waitFor, type RunDetail, removeScratch } from "./helpers.js";
 
 interface GhState {
   login: string;
@@ -52,7 +52,7 @@ async function setup(pipelineOverride?: (yaml: string) => string, yamlOverride?:
   process.env.FAKE_GH_STATE = ghState;
   const tmux = new Tmux(config.tmuxSocket);
   let backend: Backend = await startBackend(config, { memory });
-  cleanups.push(() => rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
+  cleanups.push(() => removeScratch(root));
   cleanups.push(() => disposeTmux(tmux, config.tmuxSocket));
   cleanups.push(() => backend.close());
   const gh = {

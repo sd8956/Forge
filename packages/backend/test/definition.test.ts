@@ -1,11 +1,11 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { DefinitionView } from "@forge/shared";
 import { afterEach, describe, expect, it } from "vitest";
 import { startBackend, type Backend } from "../src/app.js";
 import { Tmux } from "../src/runner/tmux.js";
-import { Api, disposeTmux, FAKE_GH, fakeEnv, readTrace, scratch, StubMemory, testConfig, waitFor } from "./helpers.js";
+import { Api, disposeTmux, FAKE_GH, fakeEnv, readTrace, scratch, StubMemory, testConfig, waitFor, removeScratch } from "./helpers.js";
 
 const cleanups: (() => Promise<void> | void)[] = [];
 afterEach(async () => {
@@ -31,7 +31,7 @@ async function setup(script: Record<string, string[]> = {}) {
   const tmux = new Tmux(config.tmuxSocket);
   const memory = new StubMemory();
   let backend: Backend = await startBackend(config, { memory });
-  cleanups.push(() => rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
+  cleanups.push(() => removeScratch(root));
   cleanups.push(() => disposeTmux(tmux, config.tmuxSocket));
   cleanups.push(() => backend.close());
   const api = () => new Api(backend.url, backend.token);
