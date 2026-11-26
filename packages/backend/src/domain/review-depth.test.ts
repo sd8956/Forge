@@ -81,6 +81,14 @@ describe("reviewDepth", () => {
     expect(depth.tier).toBe("medium");
   });
 
+  it("reads a very long added line, such as a minified bundle, in linear time", () => {
+    const text = "'a' + select x ".repeat(20_000);
+    const started = performance.now();
+    const depth = reviewDepth(diff(["src/bundle.min.js"], [{ path: "src/bundle.min.js", line: 1, text }]));
+    expect(performance.now() - started).toBeLessThan(500);
+    expect(depth.tier).toBe("medium");
+  });
+
   it("does not look at the size of the change", () => {
     const files = Array.from({ length: 200 }, (_, i) => `src/module-${i}.js`);
     const added = files.flatMap((path) => Array.from({ length: 50 }, (_, line) => ({ path, line, text: "const x = 1;" })));

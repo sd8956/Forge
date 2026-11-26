@@ -36,7 +36,11 @@ const TEST_PATH = /(^|\/)(test|tests|__tests__|e2e|spec|fixtures)\/|\.(test|spec
 /** Words of a path that name sensitive code; matched against whole words so `authors` is not `auth`. */
 const SENSITIVE_WORD = /^(o?auth[nz]?|authenticat\w*|authoriz\w*|login\w*|sessions?|tokens?|passwords?|secrets?|permissions?|roles?|payments?|webhooks?|crypto\w*|migrations?|uploads?)$/;
 
-const SINKS: { name: string; pattern: RegExp }[] = [
+/** SQL verbs, with a bounded gap between SELECT and FROM so a long line is read in linear time. */
+const SQL_STATEMENT = /\b(?:select\s[^\n]{0,200}?\sfrom|insert\s+into|update\s+\w+\s+set|delete\s+from)\b/i;
+const STRING_BUILDING = /\$\{|['"`]\s*\+/;
+
+const SINKS: { name: string; pattern: { test(line: string): boolean } }[] = [
   { name: "eval", pattern: /(^|[^\w.$])eval\s*\(/ },
   { name: "new Function", pattern: /\bnew\s+Function\s*\(/ },
   { name: "child_process", pattern: /['"](node:)?child_process['"]/ },
@@ -46,7 +50,7 @@ const SINKS: { name: string; pattern: RegExp }[] = [
   { name: "document.write", pattern: /\bdocument\.write(ln)?\s*\(/ },
   {
     name: "SQL built from strings",
-    pattern: /\b(select\s[\s\S]*\sfrom|insert\s+into|update\s+\w+\s+set|delete\s+from)\b(?=[\s\S]*(\$\{|['"`]\s*\+))|(['"`]\s*\+|\$\{)[\s\S]*\b(select\s[\s\S]*\sfrom|insert\s+into|update\s+\w+\s+set|delete\s+from)\b/i,
+    pattern: { test: (line) => SQL_STATEMENT.test(line) && STRING_BUILDING.test(line) },
   },
 ];
 
