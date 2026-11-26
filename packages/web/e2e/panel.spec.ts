@@ -70,7 +70,7 @@ test("shows the pipeline, the evidence and the artifacts of a run", async ({ pag
   await expect(page.getByRole("heading", { name: "Add and list todos" })).toBeVisible();
   await expect(page.getByText(/Covers FR-001, FR-002 · size S/)).toBeVisible();
   await expect(page.getByRole("heading", { name: "Pipeline" })).toBeVisible();
-  for (const label of ["Plan + test plan", "Technical design", "Development", "Security", "E2E tests", "Pull request"]) {
+  for (const label of ["Plan + test plan", "Technical design", "Development", "Security", "E2E tests", "Code review", "Pull request"]) {
     await expect(page.locator(".timeline").getByText(label)).toBeVisible();
   }
   await page.getByRole("tab", { name: "Test plan and evidence" }).click();

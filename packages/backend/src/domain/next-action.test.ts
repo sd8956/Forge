@@ -10,11 +10,12 @@ steps:
   - { id: development, agent: forge-developer, model: sonnet, settings: s.json }
   - { id: security, agent: forge-security, model: opus, settings: s.json, on_fail: { goto: development, max_attempts: 3 } }
   - { id: e2e, agent: forge-tester, model: sonnet, settings: s.json, on_fail: { goto: development } }
+  - { id: code_review, agent: forge-code-reviewer, model: opus, settings: s.json, exit: { review_clean: true }, on_fail: { goto: development, max_attempts: 3 } }
   - { id: pr, agent: forge-pr, model: sonnet, settings: s.json }
 review:
   max_rounds: 2
   fix: { id: review_fix, agent: forge-review-fixer, model: sonnet, settings: s.json, exit: { threads_answered: true } }
-  then: [security, e2e, pr]
+  then: [security, e2e, code_review, pr]
 `);
 
 const outcome = (step: StepOutcome["step"], result: StepOutcome["result"], cause: StepOutcome["cause"] = "reported"): StepOutcome => ({ step, result, cause });
@@ -98,22 +99,35 @@ describe("decideNext", () => {
   });
 });
 
+describe("decideNext with code_review", () => {
+  it("reviews the code after e2e and before the pull request", () => {
+    expect(decideNext(pipeline, {}, outcome("e2e", "done"))).toMatchObject({ kind: "launch", step: "code_review", reason: "next_step" });
+    expect(decideNext(pipeline, {}, outcome("code_review", "done"))).toMatchObject({ kind: "launch", step: "pr", reason: "next_step" });
+  });
+
+  it("sends a failed code_review back to development and counts it", () => {
+    expect(decideNext(pipeline, {}, outcome("code_review", "failed"))).toEqual({ kind: "launch", step: "development", attempts: { code_review: 1 }, reason: "on_fail" });
+  });
+});
+
 describe("decideNext in review mode", () => {
-  it("runs review_fix, then security, e2e and pr, then completes", () => {
-    expect(stepsFor(pipeline, "review").map((s) => s.id)).toEqual(["review_fix", "security", "e2e", "pr"]);
+  it("runs review_fix, then security, e2e, code_review and pr, then completes", () => {
+    expect(stepsFor(pipeline, "review").map((s) => s.id)).toEqual(["review_fix", "security", "e2e", "code_review", "pr"]);
     expect(firstStep(pipeline, "review")).toBe("review_fix");
     expect(decideNext(pipeline, {}, outcome("review_fix", "done"), "review")).toMatchObject({ kind: "launch", step: "security" });
-    expect(decideNext(pipeline, {}, outcome("e2e", "done"), "review")).toMatchObject({ kind: "launch", step: "pr" });
+    expect(decideNext(pipeline, {}, outcome("e2e", "done"), "review")).toMatchObject({ kind: "launch", step: "code_review" });
+    expect(decideNext(pipeline, {}, outcome("code_review", "done"), "review")).toMatchObject({ kind: "launch", step: "pr" });
     expect(decideNext(pipeline, {}, outcome("pr", "done"), "review")).toMatchObject({ kind: "complete" });
   });
 
-  it("sends a failed security or e2e back to review_fix instead of development", () => {
+  it("sends a failed security, e2e or code_review back to review_fix instead of development", () => {
     expect(decideNext(pipeline, {}, outcome("security", "failed"), "review")).toMatchObject({ kind: "launch", step: "review_fix", reason: "on_fail" });
+    expect(decideNext(pipeline, {}, outcome("code_review", "failed"), "review")).toMatchObject({ kind: "launch", step: "review_fix", reason: "on_fail" });
     expect(decideNext(pipeline, {}, outcome("e2e", "failed"), "review")).toMatchObject({ kind: "launch", step: "review_fix" });
   });
 
   it("keeps build mode unchanged", () => {
-    expect(stepsFor(pipeline, "build").map((s) => s.id)).toEqual(["plan", "development", "security", "e2e", "pr"]);
+    expect(stepsFor(pipeline, "build").map((s) => s.id)).toEqual(["plan", "development", "security", "e2e", "code_review", "pr"]);
     expect(decideNext(pipeline, {}, outcome("security", "failed"))).toMatchObject({ step: "development" });
   });
 });

@@ -141,6 +141,31 @@ export function prototypeScreens(paths: string[]): string[] {
     .sort();
 }
 
+/** Token groups a design must choose, with the key names accepted for each. */
+const TOKEN_GROUPS: [string, string[]][] = [
+  ["color", ["color", "colors", "palette"]],
+  ["radius", ["radius", "radii", "borderradius", "border-radius", "rounded"]],
+  ["typography", ["typography", "font", "fonts", "fontfamily", "font-family", "type"]],
+];
+
+const hasValue = (value: unknown) => (typeof value === "string" ? value.trim() !== "" : Boolean(value) && typeof value === "object" && Object.keys(value as object).length > 0);
+
+function tokenIssues(parsed: Record<string, unknown>): string[] {
+  const keys = new Map(Object.entries(parsed).map(([k, v]) => [k.toLowerCase(), v]));
+  return TOKEN_GROUPS.filter(([, names]) => !names.some((n) => hasValue(keys.get(n)))).map(
+    ([group]) => `.factory/design/tokens.json has no ${group} tokens (the defaults of a component library are not a choice)`,
+  );
+}
+
+/** Every `## <Component>` section of components.md names the library it comes from, or why it is hand-built. */
+function componentIssues(text: string): string[] {
+  const sections = text.split(/^(?=#{2,3}\s)/m).filter((section) => /^#{2,3}\s/.test(section));
+  if (sections.length === 0) return ["components.md lists no components (one ## <Component> section each)"];
+  return sections
+    .filter((section) => !/^\s*(?:[-*]\s*)?Library:\s*\S/im.test(section))
+    .map((section) => `components.md: ${/^#{2,3}\s+(.+)$/m.exec(section)?.[1]?.trim()} names no library (- Library: <name>, or - Library: hand-built: <why>)`);
+}
+
 function design(files: FactoryFiles): StageValidation {
   const issues: string[] = [];
   const tokens = files[".factory/design/tokens.json"];
@@ -149,11 +174,14 @@ function design(files: FactoryFiles): StageValidation {
     try {
       const parsed = JSON.parse(tokens) as unknown;
       if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) issues.push(".factory/design/tokens.json must be a JSON object");
+      else issues.push(...tokenIssues(parsed as Record<string, unknown>));
     } catch {
       issues.push(".factory/design/tokens.json is not valid JSON");
     }
   }
-  if (!files[".factory/design/components.md"]?.trim()) issues.push(missing(".factory/design/components.md"));
+  const components = files[".factory/design/components.md"];
+  if (!components?.trim()) issues.push(missing(".factory/design/components.md"));
+  else issues.push(...componentIssues(components));
   const screens = prototypeScreens(Object.keys(files)).length;
   if (screens === 0) issues.push(".factory/prototype/ has no HTML screen");
   return result(issues, plural(screens, "screen"));

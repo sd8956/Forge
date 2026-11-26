@@ -1,0 +1,131 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__factory",
+      "mcp__engram",
+      "Agent",
+      "Bash(git log:*)",
+      "Bash(git diff:*)",
+      "Bash(git status:*)",
+      "Bash(git ls-files:*)",
+      "Bash(git show:*)",
+      "Bash(git blame:*)",
+      "Bash(git rev-parse:*)",
+      "Bash(ls:*)",
+      "Bash(make check)",
+      "Bash(make lint)",
+      "Bash(make unit)",
+      "Bash(node --test:*)"
+    ],
+    "deny": [
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git checkout:*)",
+      "Bash(git restore:*)",
+      "Bash(git stash:*)",
+      "Bash(git push:*)",
+      "Bash(git push --force:*)",
+      "Bash(git push -f:*)",
+      "Bash(git reset --hard:*)",
+      "Bash(rm -rf:*)",
+      "Bash(sudo:*)",
+      "Bash(curl:*)",
+      "Bash(wget:*)",
+      "Bash(gh pr merge:*)",
+      "Bash(gh api -X PUT:*)",
+      "Bash(gh api -X DELETE:*)"
+    ]
+  },
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "http",
+            "url": "{{FORGE_URL}}/hooks/stop",
+            "headers": {
+              "x-forge-token": "{{FORGE_TOKEN}}"
+            },
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "matcher": "permission_prompt|idle_prompt",
+        "hooks": [
+          {
+            "type": "http",
+            "url": "{{FORGE_URL}}/hooks/notification",
+            "headers": {
+              "x-forge-token": "{{FORGE_TOKEN}}"
+            },
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "http",
+            "url": "{{FORGE_URL}}/hooks/session-end",
+            "headers": {
+              "x-forge-token": "{{FORGE_TOKEN}}"
+            },
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash|Read|Write|Edit|MultiEdit|Glob|Grep",
+        "hooks": [
+          {
+            "type": "http",
+            "url": "{{FORGE_URL}}/hooks/pre-tool-use",
+            "headers": {
+              "x-forge-token": "{{FORGE_TOKEN}}"
+            },
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "http",
+            "url": "{{FORGE_URL}}/hooks/activity",
+            "headers": {
+              "x-forge-token": "{{FORGE_TOKEN}}"
+            },
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "http",
+            "url": "{{FORGE_URL}}/hooks/activity",
+            "headers": {
+              "x-forge-token": "{{FORGE_TOKEN}}"
+            },
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  },
+  "attribution": {
+    "commit": "",
+    "pr": ""
+  }
+}

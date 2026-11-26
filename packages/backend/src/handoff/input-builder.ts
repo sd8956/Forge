@@ -1,5 +1,6 @@
 import type { StepKind } from "@forge/shared";
 import { stringify } from "yaml";
+import type { ReviewDepth } from "../domain/review-depth.js";
 import type { PipelineStep } from "../pipeline/pipeline.js";
 import { STEP_CONTRACTS } from "./contracts.js";
 
@@ -32,6 +33,8 @@ export interface InputContext {
   pullRequest?: { number: number; url: string } | undefined;
   /** PR threads and failed checks to answer (review_fix). Bodies are untrusted third-party text. */
   threads?: { id: string; kind: string; author: string | null; location: string | null; url: string | null; body: string }[] | undefined;
+  /** Review depth the backend chose from the task diff (code_review). */
+  lenses?: ReviewDepth | undefined;
   /** Set when this step runs again because a later step failed (on_fail) or it failed itself. */
   failure?: { kind: StepKind; output: string; summary: string; artifacts: string[]; failures: number; limit: number } | undefined;
 }
@@ -45,13 +48,20 @@ function exitCriteria(exit: PipelineStep["exit"], outputDir: string): string[] {
   if (exit.every_ac_has_tc) lines.push("Every `AC-n` of the task appears in `test-plan.md`, which has `TC-xx` cases");
   if (exit.command) lines.push(`\`${exit.command}\` exits 0 in the worktree (the backend runs it when you report \`done\`)`);
   if (exit.max_severity) lines.push(`No confirmed finding above \`${exit.max_severity}\``);
-  if (exit.all_cases_pass) lines.push("Every TC of the test plan is in `evidence/manifest.json`, passed, with evidence files");
+  if (exit.all_cases_pass) {
+    lines.push("Every TC of the test plan is in `evidence/manifest.json`, passed, with evidence files and the state they prove (`proves`)");
+    lines.push("`evidence/manifest.json` has a `met` verdict for every acceptance criterion and every FR the task covers, citing its cases");
+  }
   if (exit.pr_created) {
     lines.push("A pull request exists and its URL is in `pr_url`");
     lines.push("`pr.md` (the PR body) has the sections Why, What changed, Scope, Tradeoffs, Blast radius and Verification, in at most 40 lines");
   }
   if (exit.tdd_evidence) {
-    lines.push("Every unit or integration `TC-xx` of the test plan has a `tdd` entry, and each `red_commit` (the failing test) comes before the fix in `commits`");
+    lines.push("Every unit or integration `TC-xx` of the test plan has a `tdd` entry; each `red_commit` (the failing test) is listed in `commits` and is an earlier commit of the branch than its tip");
+  }
+  if (exit.review_clean) {
+    lines.push("`lenses` in `output.md` are exactly the lenses of Review depth, and every finding comes from one of them");
+    lines.push("Every BLOCKER or CRITICAL finding the task introduced has `refuter: refuted`; while one stands, report `failed` with what development must change");
   }
   return lines;
 }
@@ -84,6 +94,25 @@ export function renderInput(ctx: InputContext): string {
     `## Goal\n\n${contract.goal}`,
     `## Task\n\nRead \`${ctx.taskSpec}\` first: its acceptance criteria are the scope.`,
   ];
+
+  if (ctx.lenses) {
+    const lenses = ctx.lenses.lenses.length ? ctx.lenses.lenses.map((l) => `\`${l}\``).join(", ") : "none";
+    sections.push(
+      [
+        "## Review depth",
+        "",
+        `The backend chose this depth from the diff of the task branch against the base commit. Do not change it.`,
+        "",
+        `- Tier: \`${ctx.lenses.tier}\``,
+        `- Lenses: ${lenses}`,
+        "- Why:",
+        ...ctx.lenses.reasons.map((r) => `  - ${r}`),
+        "",
+        "Launch one reviewer subagent per lens and report exactly these lenses in `lenses`.",
+        "With no lens, write `output.md` with an empty ledger (`lenses: []`, `findings: []`) and `code-review.md` saying so, and report `done`.",
+      ].join("\n"),
+    );
+  }
 
   if (ctx.pullRequest) {
     const slug = /github\.com\/([^/]+\/[^/]+)\/pull\//.exec(ctx.pullRequest.url)?.[1];

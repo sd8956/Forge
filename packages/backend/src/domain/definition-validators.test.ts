@@ -33,8 +33,8 @@ const base: FactoryFiles = {
   ".factory/adr/0001-node.md": "# ADR 0001\n",
   ".factory/threat-model.md": threat,
   ".factory/test-strategy.md": "# Test strategy\n\nPlaywright for the web. Evidence: a screenshot per step.",
-  ".factory/design/tokens.json": '{"color": {"brand": "#c2410c"}}',
-  ".factory/design/components.md": "# Components\n",
+  ".factory/design/tokens.json": '{"color": {"brand": "#c2410c"}, "radius": {"card": "10px"}, "typography": {"body": "Inter, sans-serif"}}',
+  ".factory/design/components.md": "# Components\n\n## Toast\n\n- Library: Sonner\n- States: success, error\n\n## Link list\n\n- Library: hand-built: a plain list, no library covers it better\n",
   ".factory/prototype/index.html": "<!doctype html><title>x</title>",
   ".factory/backlog/TASK-001.md": task("TASK-001", "FR-001"),
   ".factory/backlog/TASK-002.md": task("TASK-002", "FR-002", "TASK-001", "- AC-1 (FR-002) Given a, when b, then c."),
@@ -113,6 +113,20 @@ describe("validateStage", () => {
       ".factory/design/components.md is missing",
       ".factory/prototype/ has no HTML screen",
     ]);
+  });
+
+  it("needs radius, color and typography tokens, and a library named for every component", () => {
+    const files = {
+      ...base,
+      ".factory/design/tokens.json": '{"colors": {"brand": "#c2410c"}, "radius": {}}',
+      ".factory/design/components.md": "# Components\n\n## Toast\n\n- States: success\n\n## Drawer\n\n- Library: Vaul\n",
+    };
+    expect(issues("design", files)).toEqual([
+      ".factory/design/tokens.json has no radius tokens (the defaults of a component library are not a choice)",
+      ".factory/design/tokens.json has no typography tokens (the defaults of a component library are not a choice)",
+      "components.md: Toast names no library (- Library: <name>, or - Library: hand-built: <why>)",
+    ]);
+    expect(issues("design", { ...base, ".factory/design/components.md": "# Components\n\nA toast and a list.\n" })).toEqual(["components.md lists no components (one ## <Component> section each)"]);
   });
 
   it("checks that backlog tasks cover existing requirements, have criteria and form a DAG", () => {

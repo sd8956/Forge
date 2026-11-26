@@ -3,7 +3,8 @@ import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { REPORT_STATUSES, type ReportStepInput, type StepKind } from "@forge/shared";
 import { z } from "zod";
 import type { PipelineStep } from "../pipeline/pipeline.js";
-import { evidenceManifest, SEVERITIES, STEP_CONTRACTS } from "./contracts.js";
+import type { ReviewLens } from "../domain/review-depth.js";
+import { evidenceManifest, isBlockingSeverity, SEVERITIES, STEP_CONTRACTS, type EvidenceManifest, type ReviewFinding } from "./contracts.js";
 import { parseFrontmatter } from "./frontmatter.js";
 
 export const commonFrontmatter = z.object({
@@ -35,6 +36,8 @@ export interface ReportContext {
   testPlanPath?: string | undefined;
   /** PR threads the step was asked to answer (review_fix). */
   threadIds?: string[] | undefined;
+  /** Lenses the backend assigned from the task diff (code_review). */
+  lenses?: ReviewLens[] | undefined;
   runCommand: (command: string, cwd: string) => Promise<CommandResult>;
 }
 
@@ -115,6 +118,25 @@ function checkPrBrief(ctx: ReportContext): string[] {
   return issues;
 }
 
+/** code_review: exactly the assigned lenses were reviewed, and no introduced BLOCKER or CRITICAL finding stands. */
+function checkReviewClean(ctx: ReportContext, extras: Record<string, unknown>): string[] {
+  if (!ctx.lenses) return ["The backend could not assign the review lenses for this step; report blocked"];
+  const assigned = new Set<string>(ctx.lenses);
+  const reported = (extras.lenses ?? []) as ReviewLens[];
+  const issues: string[] = [];
+  // Same set, no repeats: a lens reported twice must not stand in for one that was skipped.
+  if (new Set(reported).size !== reported.length || reported.length !== assigned.size || !reported.every((l) => assigned.has(l))) {
+    issues.push(`lenses is [${reported.join(", ")}], but the backend assigned [${ctx.lenses.join(", ")}]; review exactly the assigned lenses`);
+  }
+  for (const f of (extras.findings ?? []) as ReviewFinding[]) {
+    if (!assigned.has(f.lens)) issues.push(`Finding ${f.id} is from lens ${f.lens}, which was not assigned`);
+    if (isBlockingSeverity(f.severity) && f.origin === "introduced" && f.refuter !== "refuted") {
+      issues.push(`Cannot report done with blocking finding ${f.id} (${f.severity} at ${f.location}); report failed with what development must change`);
+    }
+  }
+  return issues;
+}
+
 interface TddEntry {
   cases: string[];
   red_commit: string;
@@ -133,6 +155,7 @@ function checkTddEvidence(ctx: ReportContext, extras: Record<string, unknown>): 
   const issues: string[] = [];
   const tdd = (extras.tdd ?? []) as TddEntry[];
   const commits = (extras.commits ?? []) as string[];
+  if (tdd.length === 0) issues.push("tdd: list each test written first (cases, red, red_commit, green)");
   for (const red of new Set(tdd.map((t) => t.red_commit))) {
     if (!commits.includes(red)) issues.push(`tdd: red_commit ${red} is not in commits`);
   }
@@ -183,12 +206,29 @@ function checkExitCriteria(ctx: ReportContext, extras: Record<string, unknown>):
   if (ctx.exit.all_cases_pass) issues.push(...checkEvidence(ctx, extras));
   if (ctx.exit.tdd_evidence) issues.push(...checkTddEvidence(ctx, extras));
   if (ctx.exit.pr_created) issues.push(...checkPrBrief(ctx));
+  if (ctx.exit.review_clean) issues.push(...checkReviewClean(ctx, extras));
 
   if (ctx.exit.threads_answered) {
     const answered = new Set(((extras.threads ?? []) as { id: string }[]).map((t) => t.id));
     const missing = (ctx.threadIds ?? []).filter((id) => !answered.has(id));
     if (missing.length) issues.push(`output.md does not answer ${missing.join(", ")}`);
   }
+  return issues;
+}
+
+/** Every acceptance criterion and covered FR of the task has a met verdict that cites cases of the manifest. */
+function checkVerdicts(ctx: ReportContext, manifest: EvidenceManifest, cases: Map<string, unknown>): string[] {
+  const spec = existsSync(ctx.taskSpecPath) ? readFileSync(ctx.taskSpecPath, "utf8") : "";
+  const covers = /^\s*-\s*Covers:\s*(.+)$/im.exec(spec)?.[1] ?? "";
+  const expected = [...ids(spec, /\bAC-\d+\b/g), ...ids(covers, /\bFR-\d+\b/g)];
+  const given = [...manifest.criteria, ...manifest.requirements];
+  const issues: string[] = [];
+  for (const v of given) {
+    if (v.verdict === "unmet") issues.push(`${v.id} is unmet; report failed when a criterion is not met`);
+    for (const tc of v.cases) if (!cases.has(tc)) issues.push(`${v.id} cites ${tc}, which is not in the manifest`);
+  }
+  const seen = new Set(given.map((v) => v.id));
+  for (const id of expected) if (!seen.has(id)) issues.push(`evidence/manifest.json has no verdict for ${id}`);
   return issues;
 }
 
@@ -215,6 +255,7 @@ function checkEvidence(ctx: ReportContext, extras: Record<string, unknown>): str
       if (!existsSync(resolve(dirname(file), f))) issues.push(`${c.id} evidence file ${f} does not exist`);
     }
   }
+  issues.push(...checkVerdicts(ctx, manifest, byId));
   const tests = extras.tests as { total?: number; failed?: number } | undefined;
   if (tests && tests.total !== manifest.cases.length) issues.push(`frontmatter tests.total is ${tests.total}, manifest has ${manifest.cases.length} cases`);
   return issues;

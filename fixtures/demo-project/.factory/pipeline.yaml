@@ -37,6 +37,14 @@ steps:
     exit: { requires: [test-report.md, evidence/manifest.json], all_cases_pass: true }
     on_fail: { goto: development, max_attempts: 3 }
 
+  # Lenses are chosen by the backend from the diff (ADR 0015); the agent never picks its own depth.
+  - id: code_review
+    agent: forge-code-reviewer
+    model: opus
+    settings: steps/code-reviewer.settings.json
+    exit: { requires: [code-review.md], review_clean: true }
+    on_fail: { goto: development, max_attempts: 3 }
+
   - id: pr
     agent: forge-pr
     model: sonnet
@@ -52,4 +60,4 @@ review:
     model: sonnet
     settings: steps/review-fixer.settings.json
     exit: { requires: [replies.md], command: make check, threads_answered: true }
-  then: [security, e2e, pr]
+  then: [security, e2e, code_review, pr]

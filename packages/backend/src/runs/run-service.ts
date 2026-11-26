@@ -23,6 +23,7 @@ import type { StepPolicy, StepService } from "../steps/step-service.js";
 import { loadProjectConfig } from "../projects/project-config.js";
 import { BaseSync, type BaseSyncResult } from "./base-sync.js";
 import { parseDependencies, unfinishedDependencyRuns, unmergedDependencies } from "./dependencies.js";
+import { taskReviewDepth } from "./review-diff.js";
 import { isTrusted } from "./trust.js";
 
 const git = promisify(execFile);
@@ -262,6 +263,9 @@ export class RunService implements StepPolicy {
       (r) => r.stdout.trim(),
       () => undefined,
     );
+    // The backend, never the agent, decides how deep code_review goes (ADR 0015).
+    const lenses = kind === "code_review" ? await taskReviewDepth(run.worktreePath, run.baseBranch) : undefined;
+    if (lenses) this.deps.runs.recordEvent(run.id, "review_depth", { ...lenses });
     const taskSpec = `.factory/backlog/${run.taskId}.md`;
     const size = parseTaskSize(/^\s*-\s*Size:\s*([SML])\b/m.exec(this.readOptional(join(run.worktreePath, taskSpec)))?.[1]);
     const inputPath = join(run.worktreePath, outputDir, "input.md");
@@ -282,6 +286,7 @@ export class RunService implements StepPolicy {
       exit: def.exit,
       previous,
       failure,
+      lenses,
       pullRequest: run.prNumber && run.prUrl ? { number: run.prNumber, url: run.prUrl } : undefined,
       threads:
         kind === "review_fix"
@@ -512,6 +517,8 @@ export class RunService implements StepPolicy {
       taskSpecPath: join(step.worktreePath, ".factory", "backlog", `${step.taskId}.md`),
       testPlanPath: plan ? join(dirname(plan.outputPath), "test-plan.md") : undefined,
       threadIds: step.kind === "review_fix" ? this.deps.threads.unhandled(run.id).map((t) => t.externalId) : undefined,
+      // Recomputed the same way as at launch: the step never commits, so HEAD has not moved.
+      lenses: step.kind === "code_review" ? (await taskReviewDepth(step.worktreePath, run.baseBranch)).lenses : undefined,
       runCommand: (command, cwd) => runShell(command, cwd, this.deps.config.checkTimeoutMs),
     });
     return result.ok ? { ok: true } : result;

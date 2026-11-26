@@ -5,6 +5,7 @@ import type { ReportStepInput, StepKind } from "@forge/shared";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { stringify } from "yaml";
 import { parsePipeline, stepById } from "../pipeline/pipeline.js";
+import { evidenceManifest, storedEvidenceManifest } from "./contracts.js";
 import { parseFrontmatter } from "./frontmatter.js";
 import { outputDirFor, renderInput, type InputContext } from "./input-builder.js";
 import { commonFrontmatter, validateReport, type ReportContext } from "./output-validator.js";
@@ -61,6 +62,9 @@ function ctx(kind: StepKind, reported: Partial<ReportStepInput> & { artifacts: s
 const tdd = (redCommit = "abc1234", cases = ["TC-01"]) => [
   { cases, test: "test/todo.test.js: rejects an empty title", red: "node --test: 1 failing, expected 400 got 201", red_commit: redCommit, green: "node --test: 12 passing" },
 ];
+
+/** A met verdict for each acceptance criterion of the test task (AC-1, AC-2). */
+const verdicts = (...cases: string[]) => ["AC-1", "AC-2"].map((id) => ({ id, verdict: "met", cases }));
 
 describe("validateReport", () => {
   it("accepts a complete plan that covers every acceptance criterion", async () => {
@@ -135,6 +139,12 @@ describe("validateReport", () => {
     expect(runs).toBe(1);
   });
 
+  it("asks for red/green evidence only when the pipeline turns tdd_evidence on", async () => {
+    const plain = { requires: ["dev-notes.md"], every_ac_has_tc: false, all_cases_pass: false, pr_created: false, threads_answered: false, tdd_evidence: false, review_clean: false };
+    const artifacts = output("development", { commits: ["abc1234"] }, { "dev-notes.md": "n" });
+    expect((await validateReport(ctx("development", { artifacts }, { exit: plain }))).ok).toBe(true);
+  });
+
   it("requires red/green evidence for every unit and integration case, with the failing test committed before the fix", async () => {
     write("plan-out/test-plan.md", "### TC-01 — rejects empty\n- Type: unit\n\n### TC-02 — lists todos\n- Type: e2e\n\n### TC-03 — caps the length\n- Type: integration\n");
     const testPlanPath = join(worktree, "plan-out/test-plan.md");
@@ -144,7 +154,7 @@ describe("validateReport", () => {
 
     expect(await check({ commits: ["abc1234"] })).toEqual({
       ok: false,
-      issues: [expect.stringMatching(/^output\.md frontmatter tdd: /), "tdd: TC-01 (unit) has no red/green evidence", "tdd: TC-03 (integration) has no red/green evidence"],
+      issues: ["tdd: list each test written first (cases, red, red_commit, green)", "tdd: TC-01 (unit) has no red/green evidence", "tdd: TC-03 (integration) has no red/green evidence"],
     });
     expect(await check({ commits: ["def5678"], tdd: tdd() })).toEqual({
       ok: false,
@@ -166,7 +176,7 @@ describe("validateReport", () => {
   it("checks the evidence manifest against the test plan", async () => {
     write("plan-out/test-plan.md", "TC-01\nTC-02\n");
     const testPlanPath = join(worktree, "plan-out/test-plan.md");
-    const manifest = { task: "TASK-001", cases: [{ id: "TC-01", frs: ["FR-001"], result: "passed", files: ["tc-01.png"] }] };
+    const manifest = { task: "TASK-001", cases: [{ id: "TC-01", frs: ["FR-001"], result: "passed", proves: "the list shows the new todo", files: ["tc-01.png"] }], criteria: verdicts("TC-01") };
     const artifacts = output("e2e", { tests: { total: 1, passed: 1, failed: 0 } }, { "test-report.md": "r", "evidence/manifest.json": JSON.stringify(manifest) });
     const result = await validateReport(ctx("e2e", { artifacts }, { testPlanPath }));
     expect(result).toEqual({ ok: false, issues: ["evidence/manifest.json has no result for TC-02", "TC-01 evidence file tc-01.png does not exist"] });
@@ -175,15 +185,43 @@ describe("validateReport", () => {
     expect((await validateReport(ctx("e2e", { artifacts }, { testPlanPath }))).ok).toBe(true);
   });
 
+  it("needs a met verdict, backed by known cases, for every acceptance criterion and covered FR, and says what each case proves", async () => {
+    writeFileSync(join(worktree, ".factory", "backlog", "TASK-001.md"), "# TASK-001\n- Covers: FR-001, FR-002, NFR-01\n- AC-1 add\n- AC-2 list\n");
+    const files = { "test-report.md": "r", "evidence/a.png": "p" };
+    const check = (manifest: unknown) => validateReport(ctx("e2e", { artifacts: output("e2e", { tests: { total: 1, passed: 1, failed: 0 } }, { ...files, "evidence/manifest.json": JSON.stringify(manifest) }) }));
+    const kase = { id: "TC-01", result: "passed", proves: "the list shows the new todo first", files: ["a.png"] };
+
+    expect(await check({ task: "TASK-001", cases: [{ ...kase, proves: " " }], criteria: verdicts("TC-01"), requirements: [{ id: "FR-001", verdict: "met", cases: ["TC-01"] }, { id: "FR-002", verdict: "met", cases: ["TC-01"] }] })).toMatchObject({
+      ok: false,
+      issues: [expect.stringContaining("cases.0.proves")],
+    });
+    expect(await check({ task: "TASK-001", cases: [kase], criteria: [{ id: "AC-1", verdict: "unmet", cases: ["TC-09"] }], requirements: [{ id: "FR-001", verdict: "met", cases: ["TC-01"] }] })).toEqual({
+      ok: false,
+      issues: [
+        "AC-1 is unmet; report failed when a criterion is not met",
+        "AC-1 cites TC-09, which is not in the manifest",
+        "evidence/manifest.json has no verdict for AC-2",
+        "evidence/manifest.json has no verdict for FR-002",
+      ],
+    });
+    expect((await check({ task: "TASK-001", cases: [kase], criteria: verdicts("TC-01"), requirements: [{ id: "FR-001", verdict: "met", cases: ["TC-01"] }, { id: "FR-002", verdict: "met", cases: ["TC-01"] }] })).ok).toBe(true);
+  });
+
+  it("still reads manifests stored before cases said what they prove, for the panel", () => {
+    const old = { task: "TASK-001", cases: [{ id: "TC-01", frs: ["FR-001"], result: "passed", files: ["a.png"] }] };
+    expect(storedEvidenceManifest.parse(old).cases).toEqual([{ id: "TC-01", frs: ["FR-001"], result: "passed", files: ["a.png"] }]);
+    expect(evidenceManifest.safeParse(old).success).toBe(false);
+  });
+
   it("refuses an e2e done when a case failed", async () => {
-    const manifest = { task: "TASK-001", cases: [{ id: "TC-01", result: "failed", files: ["x.png"] }] };
+    const manifest = { task: "TASK-001", cases: [{ id: "TC-01", result: "failed", proves: "an error shows", files: ["x.png"] }], criteria: verdicts("TC-01") };
     const artifacts = output("e2e", { tests: { total: 1, passed: 0, failed: 1 } }, { "test-report.md": "r", "evidence/manifest.json": JSON.stringify(manifest), "evidence/x.png": "p" });
     expect(await validateReport(ctx("e2e", { artifacts }))).toEqual({ ok: false, issues: ["TC-01 is failed; report failed when a case does not pass"] });
   });
 });
 
 describe("validateReport for review_fix", () => {
-  const exit = { requires: ["replies.md"], every_ac_has_tc: false, all_cases_pass: false, pr_created: false, threads_answered: true, tdd_evidence: false };
+  const exit = { requires: ["replies.md"], every_ac_has_tc: false, all_cases_pass: false, pr_created: false, threads_answered: true, tdd_evidence: false, review_clean: false };
 
   it("lets review_fix escalate a thread to a person instead of deciding it alone", async () => {
     const threads = [
@@ -195,7 +233,7 @@ describe("validateReport for review_fix", () => {
   });
 
   it("keeps the PR body to a one-minute brief with its six sections", async () => {
-    const prExit = { requires: ["pr.md"], every_ac_has_tc: false, all_cases_pass: false, pr_created: true, threads_answered: false, tdd_evidence: false };
+    const prExit = { requires: ["pr.md"], every_ac_has_tc: false, all_cases_pass: false, pr_created: true, threads_answered: false, tdd_evidence: false, review_clean: false };
     const brief = "## Why\nx\n\n## What changed\nx\n\n## Scope\nx\n\n## Tradeoffs\nx\n\n## Blast radius\nx\n\n## Verification\nx\n";
     const pr = { pr_url: "https://github.com/o/r/pull/7", pr_number: 7 };
     const check = (body: string) => validateReport(ctx("pr", { artifacts: output("pr", pr, { "pr.md": body }) }, { exit: prExit }));
@@ -212,6 +250,68 @@ describe("validateReport for review_fix", () => {
     const result = await validateReport(ctx("review_fix", { artifacts }, { exit, threadIds: ["review_comment:1", "check:ci@abc"] }));
     expect(result).toEqual({ ok: false, issues: ["output.md does not answer check:ci@abc"] });
     expect((await validateReport(ctx("review_fix", { artifacts }, { exit, threadIds: ["review_comment:1"] }))).ok).toBe(true);
+  });
+});
+
+describe("validateReport for code_review", () => {
+  const exit = { requires: ["code-review.md"], every_ac_has_tc: false, all_cases_pass: false, pr_created: false, threads_answered: false, tdd_evidence: false, review_clean: true };
+  const finding = (overrides: Record<string, unknown> = {}) => ({
+    id: "F-1",
+    lens: "risk",
+    severity: "BLOCKER",
+    location: "src/server.js:42",
+    claim: "The title is written into the page without escaping.",
+    proof: "curl -d 'title=<script>' then GET / shows the raw <script> tag",
+    origin: "introduced",
+    refuter: "corroborated",
+    ...overrides,
+  });
+  const ALL = ["risk", "resilience", "readability", "reliability"];
+  const check = (fields: Record<string, unknown>, lenses: ReportContext["lenses"] = ALL as ReportContext["lenses"], status: "done" | "failed" = "done") =>
+    validateReport(ctx("code_review", { artifacts: output("code_review", { status, ...fields }, { "code-review.md": "review" }), status }, { exit, lenses }));
+
+  it("accepts a clean review of exactly the assigned lenses", async () => {
+    expect(await check({ lenses: ["reliability"], findings: [finding({ lens: "reliability", severity: "WARNING", refuter: "not_needed" })] }, ["reliability"])).toMatchObject({ ok: true });
+    expect(await check({ lenses: [], findings: [] }, [])).toMatchObject({ ok: true });
+  });
+
+  it("refuses lenses other than the ones the backend assigned", async () => {
+    expect(await check({ lenses: ["reliability"], findings: [] })).toEqual({
+      ok: false,
+      issues: ["lenses is [reliability], but the backend assigned [risk, resilience, readability, reliability]; review exactly the assigned lenses"],
+    });
+    // Repeating a lens must not stand in for the ones skipped.
+    expect(await check({ lenses: ["reliability", "reliability", "reliability", "reliability"], findings: [] })).toEqual({
+      ok: false,
+      issues: ["lenses is [reliability, reliability, reliability, reliability], but the backend assigned [risk, resilience, readability, reliability]; review exactly the assigned lenses"],
+    });
+  });
+
+  it("refuses done while an introduced BLOCKER or CRITICAL finding stands", async () => {
+    expect(await check({ lenses: ALL, findings: [finding(), finding({ id: "F-2", severity: "CRITICAL", refuter: "inconclusive", location: "src/db.js:7" })] })).toEqual({
+      ok: false,
+      issues: [
+        "Cannot report done with blocking finding F-1 (BLOCKER at src/server.js:42); report failed with what development must change",
+        "Cannot report done with blocking finding F-2 (CRITICAL at src/db.js:7); report failed with what development must change",
+      ],
+    });
+    expect((await check({ lenses: ALL, findings: [finding()] }, ALL as ReportContext["lenses"], "failed")).ok).toBe(true);
+  });
+
+  it("lets done through when the refuter refuted the blocker or it was already on the base", async () => {
+    expect((await check({ lenses: ALL, findings: [finding({ refuter: "refuted" }), finding({ id: "F-2", origin: "pre-existing" })] })).ok).toBe(true);
+  });
+
+  it("refuses an introduced BLOCKER or CRITICAL finding that skipped the refuter", async () => {
+    const result = await check({ lenses: ALL, findings: [finding({ severity: "CRITICAL", refuter: "not_needed" })] }, ALL as ReportContext["lenses"], "failed");
+    expect(result).toEqual({ ok: false, issues: [expect.stringContaining("findings.0.refuter: BLOCKER and CRITICAL findings")] });
+  });
+
+  it("refuses a finding from a lens that was not assigned", async () => {
+    expect(await check({ lenses: ["reliability"], findings: [finding({ lens: "risk", severity: "WARNING", refuter: "not_needed" })] }, ["reliability"])).toEqual({
+      ok: false,
+      issues: ["Finding F-1 is from lens risk, which was not assigned"],
+    });
   });
 });
 
@@ -277,6 +377,20 @@ describe("renderInput", () => {
     const text = renderInput({ ...base, failure: { ...failure, failures: 2 } });
     expect(text).toContain("Question the premise");
     expect(text).toContain("dev-notes.md");
+  });
+
+  it("tells the code reviewer the depth the backend chose and what to do with no lens", () => {
+    const review = { ...base, kind: "code_review" as const, outputDir: outputDirFor("TASK-001", "code_review", 1), exit: { ...base.exit, review_clean: true } };
+    const high = renderInput({ ...review, lenses: { tier: "high", lenses: ["risk", "resilience", "readability", "reliability"], reasons: ["src/login.js: sensitive path (login)"] } });
+    expect(high).toContain("## Review depth");
+    expect(high).toContain("- Tier: `high`");
+    expect(high).toContain("- Lenses: `risk`, `resilience`, `readability`, `reliability`");
+    expect(high).toContain("  - src/login.js: sensitive path (login)");
+    expect(high).toContain("`lenses` in `output.md` are exactly the lenses of Review depth");
+    const passive = renderInput({ ...review, lenses: { tier: "passive", lenses: [], reasons: ["only documentation changed"] } });
+    expect(passive).toContain("- Lenses: none");
+    expect(passive).toContain("With no lens, write `output.md` with an empty ledger");
+    expect(renderInput(base)).not.toContain("## Review depth");
   });
 
   it("explains why the step runs again after a failure", () => {

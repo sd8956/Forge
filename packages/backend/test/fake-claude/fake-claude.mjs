@@ -119,8 +119,8 @@ const DEFINITION_FILES = {
   },
   def_test_strategy: { ".factory/test-strategy.md": "# Test strategy\n\nPlaywright for the web. Evidence: a screenshot per step.\n" },
   def_design: {
-    ".factory/design/tokens.json": '{"color": {"brand": "#c2410c"}}\n',
-    ".factory/design/components.md": "# Components\n\n- Link form\n",
+    ".factory/design/tokens.json": '{"color": {"brand": "#c2410c"}, "radius": {"card": "10px"}, "typography": {"body": "Inter, sans-serif"}}\n',
+    ".factory/design/components.md": "# Components\n\n## Link form\n\n- Library: Base UI (Field, Input)\n",
     ".factory/prototype/index.html": "<!doctype html><title>Shorten</title><h1>Shorten a link</h1><p>Design attempt ATTEMPT</p><script>document.title = 'prototype ran'</script>\n",
     ".factory/prototype/stats.html": "<!doctype html><title>Stats</title><h1>Link stats</h1>\n",
   },
@@ -184,12 +184,28 @@ function produce(status) {
       const tcs = plan && existsSync(plan) ? [...new Set(readFileSync(plan, "utf8").match(/\bTC-\d+\b/g) ?? [])] : ["TC-01"];
       const cases = tcs.map((id, i) => {
         files.push(writeFile(join(outputDir, "evidence", id, "01-step.png"), "png"));
-        return { id, frs: ["FR-001"], result: status === "failed" && i === 0 ? "failed" : "passed", files: [`${id}/01-step.png`] };
+        return { id, frs: ["FR-001"], result: status === "failed" && i === 0 ? "failed" : "passed", proves: `fake state of ${id}`, files: [`${id}/01-step.png`] };
       });
-      out("evidence/manifest.json", JSON.stringify({ task: taskId, cases }, null, 2));
+      const spec = readFileSync(join(".factory", "backlog", `${taskId}.md`), "utf8");
+      const covers = /^\s*-\s*Covers:\s*(.+)$/im.exec(spec)?.[1] ?? "";
+      const verdicts = (found) => [...new Set(found ?? [])].map((id) => ({ id, verdict: status === "failed" ? "unmet" : "met", cases: [cases[0].id] }));
+      const manifest = { task: taskId, cases, criteria: verdicts(spec.match(/\bAC-\d+\b/g)), requirements: verdicts(covers.match(/\bFR-\d+\b/g)) };
+      out("evidence/manifest.json", JSON.stringify(manifest, null, 2));
       out("test-report.md", `# Test report\n${cases.map((c) => `| ${c.id} | ${c.result} |`).join("\n")}\n`);
       const failed = cases.filter((c) => c.result === "failed").length;
       extras.tests = { total: cases.length, passed: cases.length - failed, failed };
+      break;
+    }
+    case "code_review": {
+      // Review exactly the lenses the backend assigned in "Review depth"; a failed review leaves one standing blocker.
+      const line = /^- Lenses: (.+)$/m.exec(input)?.[1] ?? "none";
+      const lenses = [...line.matchAll(/`([a-z]+)`/g)].map((m) => m[1]);
+      const findings =
+        status === "failed"
+          ? [{ id: "F-1", lens: lenses[0] ?? "reliability", severity: "BLOCKER", location: "src/server.js:1", claim: "Fake blocker.", proof: "fake proof", origin: "introduced", refuter: "corroborated" }]
+          : [];
+      out("code-review.md", `# Code review\n\nLenses: ${lenses.join(", ") || "none"}\n${findings.map((f) => `| ${f.id} | ${f.severity} | ${f.claim} |`).join("\n")}\n`);
+      Object.assign(extras, { lenses, findings });
       break;
     }
     case "pr":

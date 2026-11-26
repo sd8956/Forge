@@ -108,7 +108,7 @@ describe("backend restart", () => {
 
     writeFileSync(join(e.root, "release"), "");
     const done = await second.api.waitForRun(id, "waiting_review");
-    expect(done.steps.map((s) => `${s.kind}#${s.attempt}`)).toEqual(["plan#1", "design#1", "development#1", "security#1", "e2e#1", "pr#1"]);
+    expect(done.steps.map((s) => `${s.kind}#${s.attempt}`)).toEqual(["plan#1", "design#1", "development#1", "security#1", "e2e#1", "code_review#1", "pr#1"]);
     expect(await second.api.runs()).toHaveLength(1);
   });
 
@@ -151,6 +151,6 @@ describe("backend restart", () => {
     expect(statusOut).toContain("waiting_review");
     expect(statusOut).toContain("security#1 done");
     expect(statusOut).toContain("Engram unavailable");
-    expect(statusOut).toContain("Total: 6 sessions, 0 permission prompts, 0 tool calls denied by the guard");
+    expect(statusOut).toContain("Total: 7 sessions, 0 permission prompts, 0 tool calls denied by the guard");
   });
 });

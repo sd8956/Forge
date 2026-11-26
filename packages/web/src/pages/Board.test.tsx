@@ -46,6 +46,14 @@ describe("columnOf", () => {
 });
 
 describe("Board", () => {
+  it("shows a run in code review in its own column, between E2E and the pull request", () => {
+    render(<Board project={project} runs={[run("TASK-001", "running", "code_review", step("code_review", "running"))]} backlog={backlog} now={61_000} onChanged={() => undefined} />);
+    expect(within(screen.getByRole("region", { name: "Code review" })).getByText("Add and list todos")).toBeTruthy();
+    const names = screen.getAllByRole("region").map((r) => r.getAttribute("aria-label"));
+    expect(names.indexOf("Code review")).toBe(names.indexOf("E2E tests") + 1);
+    expect(names.indexOf("Pull request")).toBe(names.indexOf("Code review") + 1);
+  });
+
   it("shows each task once, in its column, with labelled states and the attention counter", () => {
     const runs = [
       run("TASK-001", "needs_human", "development", step("development", "needs_human", { permissionPrompts: 2 })),

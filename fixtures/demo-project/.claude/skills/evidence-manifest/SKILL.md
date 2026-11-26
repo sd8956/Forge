@@ -1,6 +1,6 @@
 ---
 name: evidence-manifest
-description: Format of evidence/manifest.json in the Forge e2e step. Links every TC of the test plan to its FR ids, its result and its evidence files. The backend validates it. Use in the e2e step after running the tests.
+description: Format of evidence/manifest.json in the Forge e2e step. Links every TC of the test plan to its FR ids, its result, the state its evidence proves and its files, and gives a met or unmet verdict per acceptance criterion and covered FR. The backend validates it. Use in the e2e step after running the tests.
 ---
 
 # Evidence manifest
@@ -15,9 +15,12 @@ Write `<out>/evidence/manifest.json`:
       "id": "TC-01",
       "frs": ["FR-001"],
       "result": "passed",
+      "proves": "the list shows \"Buy milk\" first and the counter reads \"1 item\"",
       "files": ["TC-01/01-open-page.png", "TC-01/02-add-todo.png", "playwright/<test-dir>/trace.zip", "playwright/<test-dir>/video.webm"]
     }
-  ]
+  ],
+  "criteria": [{ "id": "AC-1", "verdict": "met", "cases": ["TC-01"] }],
+  "requirements": [{ "id": "FR-001", "verdict": "met", "cases": ["TC-01"] }]
 }
 ```
 
@@ -31,5 +34,11 @@ Write `<out>/evidence/manifest.json`:
   - Unit cases: run `make check`, write its output to `<out>/evidence/make-check.log` with the Write tool,
     and list `make-check.log`.
 - `frs` come from the test plan's "Covers" line.
+- `proves` names the exact state the evidence shows, with the texts on screen. Before writing it, open the
+  last screenshot of the case and check that it really shows that state; a screenshot that exists is not
+  one that proves.
+- `criteria` has one verdict per `AC-n` of the task file and `requirements` one per FR in its `Covers` line:
+  `met` or `unmet`, judged from the cases you cite, not from the code. Any `unmet` means status `failed`,
+  with what was expected and what happened.
 - `done` requires every case `passed` with files; otherwise report `failed`. The frontmatter
   `tests.total` must equal the number of cases.

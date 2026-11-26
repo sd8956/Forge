@@ -20,7 +20,11 @@ From the plan, the test plan, `.factory/architecture.md` and any prototype or de
 
 1. API contracts: method, path, request and response bodies, status codes, error format.
 2. Data schema and validation rules.
-3. UI components: structure, labels, states (empty, error) and accessibility attributes.
+3. UI components: structure, labels, states (empty, error, long text, many rows) and accessibility
+   attributes, and the library each one comes from, taken from `.factory/design/components.md`. For a
+   component it does not list, check `package.json` for what is installed first, then pick one library and
+   say why in one sentence; never hand-build a toast, drawer, dialog, dropdown or command menu. At most one
+   standout element per screen.
 4. How the design satisfies each relevant NFR and threat-model mitigation.
 
 - Do not write application code.

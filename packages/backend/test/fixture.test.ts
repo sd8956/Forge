@@ -22,7 +22,25 @@ const steps = [...pipeline.steps, ...(pipeline.review ? [pipeline.review.fix] : 
 
 describe("demo-project fixture contract", () => {
   it("defines the review loop and who may trigger it", () => {
-    expect(pipeline.review).toMatchObject({ max_rounds: 3, fix: { id: "review_fix", agent: "forge-review-fixer" }, then: ["security", "e2e", "pr"] });
+    expect(pipeline.review).toMatchObject({ max_rounds: 3, fix: { id: "review_fix", agent: "forge-review-fixer" }, then: ["security", "e2e", "code_review", "pr"] });
+  });
+
+  it("reviews the code after e2e and before the PR, with read-only lens subagents and one refuter", () => {
+    expect(pipeline.steps.map((s) => s.id)).toEqual(["plan", "design", "development", "security", "e2e", "code_review", "pr"]);
+    const review = steps.find((s) => s.step.id === "code_review");
+    expect(review?.step).toMatchObject({ agent: "forge-code-reviewer", exit: { requires: ["code-review.md"], review_clean: true }, on_fail: { goto: "development" } });
+    expect(review?.frontmatter.tools.split(",").map((t) => t.trim())).toEqual(expect.arrayContaining(["Agent", "Write"]));
+    expect(review?.frontmatter.tools).not.toContain("Edit");
+    expect(review?.frontmatter.skills).toContain("code-review");
+    expect(review?.settings.permissions.allow).toContain("Agent");
+    expect(review?.settings.permissions.deny).toEqual(expect.arrayContaining(["Bash(git commit:*)", "Bash(git push:*)"]));
+    for (const sub of ["risk", "resilience", "readability", "reliability", "refuter"]) {
+      const text = readFileSync(join(FIXTURE, ".claude", "agents", `forge-review-${sub}.md`), "utf8");
+      const frontmatter = parse(/^---\n([\s\S]*?)\n---/.exec(text)?.[1] ?? "") as { tools: string };
+      expect(frontmatter.tools.split(",").map((t) => t.trim()), sub).toEqual(["Read", "Grep", "Glob", "Bash"]);
+    }
+    const skill = readFileSync(join(FIXTURE, ".claude", "skills", "code-review", "SKILL.md"), "utf8");
+    expect(parse(/^---\n([\s\S]*?)\n---/.exec(skill)?.[1] ?? "")).toMatchObject({ name: "code-review" });
   });
 
   it("lets review_fix reply on threads and nothing else on the GitHub API", () => {
