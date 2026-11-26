@@ -193,7 +193,7 @@ function produce(status) {
       break;
     }
     case "pr":
-      out("pr.md", "## Summary\nFake PR.\n");
+      out("pr.md", ["Why", "What changed", "Scope", "Tradeoffs", "Blast radius", "Verification"].map((t) => `## ${t}\nFake.\n`).join("\n"));
       Object.assign(extras, { pr_url: "https://github.com/example/demo-project/pull/7", pr_number: 7 });
       break;
     case "review_fix": {

@@ -194,6 +194,19 @@ describe("validateReport for review_fix", () => {
     expect((await validateReport(ctx("review_fix", { artifacts }, { exit, threadIds: ["review_comment:1", "review_comment:2"] }))).ok).toBe(true);
   });
 
+  it("keeps the PR body to a one-minute brief with its six sections", async () => {
+    const prExit = { requires: ["pr.md"], every_ac_has_tc: false, all_cases_pass: false, pr_created: true, threads_answered: false, tdd_evidence: false };
+    const brief = "## Why\nx\n\n## What changed\nx\n\n## Scope\nx\n\n## Tradeoffs\nx\n\n## Blast radius\nx\n\n## Verification\nx\n";
+    const pr = { pr_url: "https://github.com/o/r/pull/7", pr_number: 7 };
+    const check = (body: string) => validateReport(ctx("pr", { artifacts: output("pr", pr, { "pr.md": body }) }, { exit: prExit }));
+    expect((await check(brief)).ok).toBe(true);
+    expect(await check(brief.replace("## Tradeoffs\nx\n\n", "").replace("## Blast radius", "## Risks"))).toEqual({
+      ok: false,
+      issues: ["pr.md has no `## Tradeoffs` section", "pr.md has no `## Blast radius` section"],
+    });
+    expect(await check(brief + "| row |\n".repeat(30))).toEqual({ ok: false, issues: ["pr.md has 47 lines; keep the PR body to 40 (link long tables instead)"] });
+  });
+
   it("requires every thread of the input to be answered", async () => {
     const artifacts = output("review_fix", { threads: [{ id: "review_comment:1", action: "fixed", reply: "Done." }], commits: ["abc1234"] }, { "replies.md": "r" });
     const result = await validateReport(ctx("review_fix", { artifacts }, { exit, threadIds: ["review_comment:1", "check:ci@abc"] }));

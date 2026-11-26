@@ -101,6 +101,20 @@ export async function validateReport(ctx: ReportContext): Promise<ReportValidati
   return { ok: true, frontmatter: parsed.data as Record<string, unknown> };
 }
 
+const PR_SECTIONS = ["Why", "What changed", "Scope", "Tradeoffs", "Blast radius", "Verification"];
+const PR_MAX_LINES = 40;
+
+/** The PR body (`pr.md`) is a brief a reviewer reads in a minute: six sections, at most 40 lines. */
+function checkPrBrief(ctx: ReportContext): string[] {
+  const file = join(ctx.outputDir, "pr.md");
+  if (!existsSync(file)) return [];
+  const body = readFileSync(file, "utf8").trimEnd();
+  const issues = PR_SECTIONS.filter((title) => !new RegExp(`^##\\s+${title}\\s*$`, "mi").test(body)).map((title) => `pr.md has no \`## ${title}\` section`);
+  const lines = body.split("\n").length;
+  if (lines > PR_MAX_LINES) issues.push(`pr.md has ${lines} lines; keep the PR body to ${PR_MAX_LINES} (link long tables instead)`);
+  return issues;
+}
+
 interface TddEntry {
   cases: string[];
   red_commit: string;
@@ -168,6 +182,7 @@ function checkExitCriteria(ctx: ReportContext, extras: Record<string, unknown>):
 
   if (ctx.exit.all_cases_pass) issues.push(...checkEvidence(ctx, extras));
   if (ctx.exit.tdd_evidence) issues.push(...checkTddEvidence(ctx, extras));
+  if (ctx.exit.pr_created) issues.push(...checkPrBrief(ctx));
 
   if (ctx.exit.threads_answered) {
     const answered = new Set(((extras.threads ?? []) as { id: string }[]).map((t) => t.id));
