@@ -14,6 +14,8 @@ export interface WsDeps {
   /** tmux session of a project's live orchestrator, if any. */
   orchestratorSession: (projectId: string) => Promise<{ tmuxSession: string; startedAt: number } | null>;
   onOrchestratorControl: (projectId: string, session: { tmuxSession: string; startedAt: number }) => void;
+  /** tmux session of a project's console, if any. */
+  consoleSession: (projectId: string) => Promise<string | null>;
 }
 
 const terminalMessage = z.discriminatedUnion("type", [
@@ -68,6 +70,17 @@ export async function registerWsRoutes(app: FastifyInstance, deps: WsDeps): Prom
     const control = query.data.mode === "control";
     if (control) deps.onOrchestratorControl(params.data.projectId, session);
     attachTerminal(socket, deps.tmuxSocket, session.tmuxSession, control);
+  });
+
+  /** The project console: the person's own session, always in control mode. */
+  app.get("/ws/console/:projectId", { websocket: true }, async (socket, request) => {
+    const params = z.object({ projectId: z.uuid() }).safeParse(request.params);
+    const session = params.success ? await deps.consoleSession(params.data.projectId) : null;
+    if (!session) {
+      socket.close(4404, "No console for this project");
+      return;
+    }
+    attachTerminal(socket, deps.tmuxSocket, session, true);
   });
 }
 

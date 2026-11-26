@@ -16,6 +16,8 @@ import type { DefinitionService } from "../definition/definition-service.js";
 import { apiKeyInput, settingsPatch, SettingsError, type SettingsService } from "../settings/settings-service.js";
 import { loadProjectConfig } from "../projects/project-config.js";
 import type { TemplateSyncService } from "../template/template-sync-service.js";
+import type { ConsoleService } from "../console/console-service.js";
+import { registerConsoleRoutes } from "./console-routes.js";
 import type { PrThreadStore } from "../db/pr-thread-store.js";
 import type { ProjectStore } from "../db/project-store.js";
 import { DuplicateRunError, toRunView, type RunStore } from "../db/run-store.js";
@@ -56,6 +58,7 @@ interface ServerDeps {
   definition: DefinitionService;
   settings: SettingsService;
   templateSync: TemplateSyncService;
+  console: ConsoleService;
   config: ForgeConfig;
   bus: EventBus;
   tmuxSocket: string;
@@ -127,6 +130,10 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
       return project ? await deps.orchestrator.status(project) : null;
     },
     // The panel reconnects the orchestrator terminal on every render; record the takeover once per session.
+    consoleSession: async (projectId) => {
+      const project = deps.projects.get(projectId);
+      return project ? ((await deps.console.status(project))?.tmuxSession ?? null) : null;
+    },
     onOrchestratorControl: (projectId, session) => {
       const key = `${session.tmuxSession}@${session.startedAt}`;
       if (controlled.get(projectId) === key) return;
@@ -226,6 +233,19 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     } catch (error) {
       return reply.code(409).send({ error: "invalid_project", message: error instanceof Error ? error.message : String(error) });
     }
+  });
+
+  registerConsoleRoutes(app, {
+    config: deps.config,
+    plans: deps.plans,
+    runs: deps.runs,
+    runService: deps.runService,
+    scheduler: deps.scheduler,
+    projects: deps.projects,
+    console: deps.console,
+    steps: deps.store,
+    threads: deps.threads,
+    baseBranch: async (projectPath) => (await gitStdout(["-C", projectPath, "rev-parse", "--abbrev-ref", "HEAD"])) || "main",
   });
 
   registerOrchestratorRoutes(app, {

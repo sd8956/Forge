@@ -25,6 +25,7 @@ import { DefinitionStore } from "./db/definition-store.js";
 import { routeStepPolicy } from "./steps/policy-router.js";
 import { SettingsService } from "./settings/settings-service.js";
 import { TemplateSyncService } from "./template/template-sync-service.js";
+import { ConsoleService } from "./console/console-service.js";
 import { StepService } from "./steps/step-service.js";
 
 export interface Backend {
@@ -88,6 +89,7 @@ export async function startBackend(config: ForgeConfig, opts: { logger?: boolean
   const plans = new PlanStore(db, Date.now, (event) => bus.publish(event));
   const settings = new SettingsService(config, plans);
   const templateSync = new TemplateSyncService({ config, projects, plans });
+  const consoles = new ConsoleService({ config, tmux, plans, token, url: () => url, apiKeyHelper: () => settings.apiKeyHelper() });
   const queue = new SchedulerService({ config, plans, runs, threads, runService, log, limits: () => settings.get() });
   service.apiKeyHelper = () => settings.apiKeyHelper();
   schedulerRef.current = queue;
@@ -134,6 +136,7 @@ export async function startBackend(config: ForgeConfig, opts: { logger?: boolean
     definition,
     settings,
     templateSync,
+    console: consoles,
     config,
     bus,
     tmuxSocket: config.tmuxSocket,
