@@ -365,6 +365,17 @@ test("opens the project console from any page, talks to it, and stops it", async
       .map((t) => t.data ?? "")
       .join("");
   await expect.poll(typed, { timeout: 10_000 }).toContain("why is TASK-002 blocked?");
+  // Selecting with the mouse copies to the clipboard: tmux selects, then hands the text over (OSC 52).
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.evaluate("navigator.clipboard.writeText('')");
+  const screenBox = await drawer.locator(".xterm-screen").boundingBox();
+  if (!screenBox) throw new Error("no terminal screen");
+  const firstRow = screenBox.y + 6;
+  await page.mouse.move(screenBox.x + 2, firstRow);
+  await page.mouse.down();
+  await page.mouse.move(screenBox.x + 90, firstRow, { steps: 5 });
+  await page.mouse.up();
+  await expect.poll(() => page.evaluate<string>("navigator.clipboard.readText()")).toContain("fake claude");
   // The wheel must not scroll the panel's own copy of the screen (tmux keeps the history).
   await drawer.getByTestId("console-terminal").hover();
   await page.mouse.wheel(0, -600);
