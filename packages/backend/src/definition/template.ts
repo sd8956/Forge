@@ -7,7 +7,7 @@ import { join } from "node:path";
  * never write them. `repo-conventions` is the template's one project-specific
  * skill, so it is replaced by a generic one that points to the architecture.
  */
-const TEMPLATE_PATHS = [".claude/agents", ".claude/skills", ".factory/pipeline.yaml", ".factory/steps", ".factory/orchestrator.settings.json", ".semgrep"];
+export const TEMPLATE_PATHS = [".claude/agents", ".claude/skills", ".factory/pipeline.yaml", ".factory/steps", ".factory/orchestrator.settings.json", ".semgrep"];
 
 const GENERIC_CONVENTIONS = `---
 name: repo-conventions
