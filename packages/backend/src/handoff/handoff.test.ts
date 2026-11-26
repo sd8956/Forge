@@ -185,6 +185,15 @@ describe("validateReport", () => {
 describe("validateReport for review_fix", () => {
   const exit = { requires: ["replies.md"], every_ac_has_tc: false, all_cases_pass: false, pr_created: false, threads_answered: true, tdd_evidence: false };
 
+  it("lets review_fix escalate a thread to a person instead of deciding it alone", async () => {
+    const threads = [
+      { id: "review_comment:1", action: "fixed", reply: "Renamed it in abc1234." },
+      { id: "review_comment:2", action: "escalated", reply: "This changes who can delete todos; a person should decide between A and B." },
+    ];
+    const artifacts = output("review_fix", { threads, commits: ["abc1234"] }, { "replies.md": "r" });
+    expect((await validateReport(ctx("review_fix", { artifacts }, { exit, threadIds: ["review_comment:1", "review_comment:2"] }))).ok).toBe(true);
+  });
+
   it("requires every thread of the input to be answered", async () => {
     const artifacts = output("review_fix", { threads: [{ id: "review_comment:1", action: "fixed", reply: "Done." }], commits: ["abc1234"] }, { "replies.md": "r" });
     const result = await validateReport(ctx("review_fix", { artifacts }, { exit, threadIds: ["review_comment:1", "check:ci@abc"] }));
