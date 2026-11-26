@@ -333,8 +333,12 @@ test("changes Forge's limits and authentication in Settings, and shows the proje
   await apps.getByLabel("File manager command").fill("/usr/bin/true");
   await apps.getByRole("button", { name: "Save" }).click();
   await expect(apps.getByRole("status")).toHaveText("Saved.");
+  // Opening shows no message; a command that cannot start says why.
   await page.getByRole("button", { name: "Open in editor" }).click();
-  await expect(page.getByRole("status").filter({ hasText: "Opened in the editor." })).toBeVisible();
   await page.getByRole("button", { name: "Open folder" }).click();
-  await expect(page.getByRole("status").filter({ hasText: "Opened the folder." })).toBeVisible();
+  await expect(page.locator(".project-actions").getByRole("alert")).toHaveCount(0);
+  await apps.getByLabel("Editor command").fill("forge-no-such-editor");
+  await apps.getByRole("button", { name: "Save" }).click();
+  await page.getByRole("button", { name: "Open in editor" }).click();
+  await expect(page.locator(".project-actions").getByRole("alert")).toContainText("Could not start forge-no-such-editor");
 });

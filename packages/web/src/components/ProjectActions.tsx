@@ -4,11 +4,12 @@ import { Icon } from "./Icon.js";
 
 /** Opens the selected project in the person's editor or file manager (the commands are set in Settings). */
 export function ProjectActions({ project }: { project: Project }) {
-  const [message, setMessage] = useState<{ text: string; error: boolean } | null>(null);
+  // Success shows as the editor or folder opening; only a failure needs words.
+  const [error, setError] = useState<string | null>(null);
   const open = (target: "editor" | "files") =>
     void api.openProject(project.id, target).then(
-      () => setMessage({ text: target === "editor" ? "Opened in the editor." : "Opened the folder.", error: false }),
-      (e: unknown) => setMessage({ text: e instanceof Error ? e.message : String(e), error: true }),
+      () => setError(null),
+      (e: unknown) => setError(e instanceof Error ? e.message : String(e)),
     );
   return (
     <div className="project-actions">
@@ -20,9 +21,9 @@ export function ProjectActions({ project }: { project: Project }) {
           <Icon name="folder" /> Folder
         </button>
       </div>
-      {message ? (
-        <p role={message.error ? "alert" : "status"} className="small" style={message.error ? { color: "var(--st-failed-fg)" } : { color: "var(--text-muted)" }}>
-          {message.text}
+      {error ? (
+        <p role="alert" className="small" style={{ color: "var(--st-failed-fg)" }}>
+          {error}
         </p>
       ) : null}
     </div>
