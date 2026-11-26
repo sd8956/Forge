@@ -13,7 +13,7 @@ const pipeline = parsePipeline(`
 version: 1
 steps:
   - { id: plan, agent: forge-planner, model: opus, settings: s.json, exit: { requires: [plan.md, test-plan.md], every_ac_has_tc: true } }
-  - { id: development, agent: forge-developer, model: sonnet, settings: s.json, exit: { requires: [dev-notes.md], command: make check } }
+  - { id: development, agent: forge-developer, model: sonnet, settings: s.json, exit: { requires: [dev-notes.md], command: make check, tdd_evidence: true } }
   - { id: security, agent: forge-security, model: opus, settings: s.json, exit: { requires: [security-report.md], max_severity: medium }, on_fail: { goto: development } }
   - { id: e2e, agent: forge-tester, model: sonnet, settings: s.json, exit: { requires: [test-report.md, evidence/manifest.json], all_cases_pass: true }, on_fail: { goto: development } }
 `);
@@ -57,6 +57,10 @@ function ctx(kind: StepKind, reported: Partial<ReportStepInput> & { artifacts: s
     ...extra,
   };
 }
+
+const tdd = (redCommit = "abc1234", cases = ["TC-01"]) => [
+  { cases, test: "test/todo.test.js: rejects an empty title", red: "node --test: 1 failing, expected 400 got 201", red_commit: redCommit, green: "node --test: 12 passing" },
+];
 
 describe("validateReport", () => {
   it("accepts a complete plan that covers every acceptance criterion", async () => {
@@ -115,9 +119,10 @@ describe("validateReport", () => {
   });
 
   it("runs the exit command only when everything else is valid, and reports its output", async () => {
-    const artifacts = output("development", { commits: ["abc1234"] }, { "dev-notes.md": "n" });
+    const artifacts = output("development", { commits: ["abc1234", "def5678"], tdd: tdd() }, { "dev-notes.md": "n" });
     let runs = 0;
-    const red = () => {
+    const red = (command: string) => {
+      if (command.startsWith("git ")) return Promise.resolve({ ok: true, output: "" });
       runs++;
       return Promise.resolve({ ok: false, output: "1 test failed" });
     };
@@ -128,6 +133,34 @@ describe("validateReport", () => {
     expect(runs).toBe(1);
     await validateReport(ctx("development", { artifacts: ["missing"] }, { runCommand: red }));
     expect(runs).toBe(1);
+  });
+
+  it("requires red/green evidence for every unit and integration case, with the failing test committed before the fix", async () => {
+    write("plan-out/test-plan.md", "### TC-01 — rejects empty\n- Type: unit\n\n### TC-02 — lists todos\n- Type: e2e\n\n### TC-03 — caps the length\n- Type: integration\n");
+    const testPlanPath = join(worktree, "plan-out/test-plan.md");
+    const files = { "dev-notes.md": "n" };
+    const check = (fields: Record<string, unknown>, runCommand: ReportContext["runCommand"] = () => Promise.resolve({ ok: true, output: "" })) =>
+      validateReport(ctx("development", { artifacts: output("development", fields, files) }, { testPlanPath, runCommand }));
+
+    expect(await check({ commits: ["abc1234"] })).toEqual({
+      ok: false,
+      issues: [expect.stringMatching(/^output\.md frontmatter tdd: /), "tdd: TC-01 (unit) has no red/green evidence", "tdd: TC-03 (integration) has no red/green evidence"],
+    });
+    expect(await check({ commits: ["def5678"], tdd: tdd() })).toEqual({
+      ok: false,
+      issues: ["tdd: red_commit abc1234 is not in commits", "tdd: TC-03 (integration) has no red/green evidence"],
+    });
+    const commands: string[] = [];
+    const notBefore = (command: string) => {
+      commands.push(command);
+      return Promise.resolve({ ok: !command.startsWith("git "), output: "" });
+    };
+    expect(await check({ commits: ["abc1234", "def5678"], tdd: tdd("abc1234", ["TC-01", "TC-03"]) }, notBefore)).toEqual({
+      ok: false,
+      issues: ["tdd: red_commit abc1234 must be an earlier commit of this branch than the fix (commit the failing test first)"],
+    });
+    expect(commands[0]).toContain("abc1234");
+    expect((await check({ commits: ["abc1234", "def5678"], tdd: tdd("abc1234", ["TC-01", "TC-03"]) })).ok).toBe(true);
   });
 
   it("checks the evidence manifest against the test plan", async () => {
@@ -150,7 +183,7 @@ describe("validateReport", () => {
 });
 
 describe("validateReport for review_fix", () => {
-  const exit = { requires: ["replies.md"], every_ac_has_tc: false, all_cases_pass: false, pr_created: false, threads_answered: true };
+  const exit = { requires: ["replies.md"], every_ac_has_tc: false, all_cases_pass: false, pr_created: false, threads_answered: true, tdd_evidence: false };
 
   it("requires every thread of the input to be answered", async () => {
     const artifacts = output("review_fix", { threads: [{ id: "review_comment:1", action: "fixed", reply: "Done." }], commits: ["abc1234"] }, { "replies.md": "r" });
@@ -195,7 +228,7 @@ describe("renderInput", () => {
     expect(parsed.ok).toBe(true);
     if (!parsed.ok) return;
     expect(commonFrontmatter.parse(parsed.data)).toMatchObject({ step: "development", task: "TASK-001", attempt: 2 });
-    expect(parsed.data).toMatchObject({ commits: ["1a2b3c4"] });
+    expect(parsed.data).toMatchObject({ commits: ["1a2b3c4", "5d6e7f8"], tdd: [{ red_commit: "1a2b3c4" }] });
   });
 
   it("lists PR threads as fenced untrusted data and names the existing PR", () => {
@@ -214,6 +247,14 @@ describe("renderInput", () => {
     // A body cannot close the fence early.
     expect(text.match(/^~~~~/gm)).toHaveLength(4);
     expect(text).toContain("### `check:check@abc` (check)");
+  });
+
+  it("asks to question the premise when the same check fails a second time", () => {
+    const failure = { kind: "e2e" as const, output: ".factory/runs/TASK-001/e2e/2/output.md", summary: "TC-02 failed", artifacts: [], limit: 3 };
+    expect(renderInput({ ...base, failure: { ...failure, failures: 1 } })).not.toContain("Question the premise");
+    const text = renderInput({ ...base, failure: { ...failure, failures: 2 } });
+    expect(text).toContain("Question the premise");
+    expect(text).toContain("dev-notes.md");
   });
 
   it("explains why the step runs again after a failure", () => {

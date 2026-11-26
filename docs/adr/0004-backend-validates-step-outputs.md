@@ -20,8 +20,11 @@ with a missing test case, a high finding or no evidence.
   common frontmatter `step`, `task`, `attempt`, `status`, `summary`, `artifacts`.
 - `report_step` runs `validateReport` before accepting: schema, agreement with the report, artifacts that
   exist inside the worktree and, for `done`, the exit criteria of `pipeline.yaml` (`requires`,
-  `every_ac_has_tc`, `command`, `max_severity`, `all_cases_pass`, `pr_created`). A rejected report returns
-  every problem to the agent; the step keeps running.
+  `every_ac_has_tc`, `command`, `max_severity`, `all_cases_pass`, `pr_created`, `threads_answered`,
+  `tdd_evidence`). A rejected report returns every problem to the agent; the step keeps running.
+- `tdd_evidence` (development): every unit or integration case of the test plan has a `tdd` entry with the
+  failing and passing runs, and git confirms each `red_commit` (the failing test) is an earlier commit of the
+  branch than its tip, so the test landed before the fix.
 - The exit `command` (`make check`) runs at report time and also in the Stop hook, whose reminder includes
   its result when the agent tries to stop without reporting.
 - Handoffs live in `.factory/runs/<TASK>/<step>/<attempt>/`, so retries never overwrite the evidence of an

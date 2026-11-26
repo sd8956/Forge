@@ -19,6 +19,7 @@ export interface StepContract {
 }
 
 const count = z.number().int().min(0);
+const sha = z.string().regex(/^[0-9a-f]{7,40}$/);
 
 export const STEP_CONTRACTS: Readonly<Record<StepKind, StepContract>> = {
   plan: {
@@ -42,8 +43,18 @@ export const STEP_CONTRACTS: Readonly<Record<StepKind, StepContract>> = {
     goal: "Implement the task test-first, following the plan, the test plan and the design. Commit your work on the task branch. `make check` must be green.",
     reads: [".factory/architecture.md", "CLAUDE.md"],
     outputs: [{ file: "dev-notes.md", description: "What changed, decisions taken, how it was tested, and anything the next steps must know." }],
-    extras: z.object({ commits: z.array(z.string().regex(/^[0-9a-f]{7,40}$/)).min(1) }),
-    extrasExample: { commits: ["1a2b3c4"] },
+    // `tdd`: one entry per test written first: the cases it covers, the failing run, the commit that added the
+    // failing test (before the fix) and the passing run.
+    extras: z.object({
+      commits: z.array(sha).min(1),
+      tdd: z
+        .array(z.object({ cases: z.array(z.string().regex(/^TC-\d+$/)).min(1), test: z.string().min(1), red: z.string().min(1), red_commit: sha, green: z.string().min(1) }))
+        .min(1),
+    }),
+    extrasExample: {
+      commits: ["1a2b3c4", "5d6e7f8"],
+      tdd: [{ cases: ["TC-01"], test: "test/todo.test.js: rejects an empty title", red: "node --test: 1 failing, expected 400 got 201", red_commit: "1a2b3c4", green: "node --test: 12 passing" }],
+    },
   },
   security: {
     goal: "Review the task's changes against the threat model: run Semgrep, gitleaks and osv-scanner, then confirm or discard each finding with a command you ran. Critical or high findings this task introduced mean `failed`; findings already on the base are listed and never block.",
@@ -82,7 +93,7 @@ export const STEP_CONTRACTS: Readonly<Record<StepKind, StepContract>> = {
       threads: z
         .array(z.object({ id: z.string().min(1), action: z.enum(["fixed", "not_applicable", "answered"]), reply: z.string().trim().min(1) }))
         .min(1),
-      commits: z.array(z.string().regex(/^[0-9a-f]{7,40}$/)).default([]),
+      commits: z.array(sha).default([]),
     }),
     extrasExample: { threads: [{ id: "review_comment:123", action: "fixed", reply: "Renamed the handler and added a test." }], commits: ["1a2b3c4"] },
   },

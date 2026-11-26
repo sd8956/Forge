@@ -162,8 +162,17 @@ function produce(status) {
       break;
     case "development": {
       out("dev-notes.md", "# Dev notes\nFake change.\n");
-      execFileSync("git", ["-c", "user.name=fake", "-c", "user.email=fake@example.invalid", "commit", "-q", "--allow-empty", "-m", `feat: fake development attempt ${attempt}`]);
-      extras.commits = [execFileSync("git", ["rev-parse", "--short", "HEAD"], { encoding: "utf8" }).trim()];
+      // Test first: the failing test is committed before the fix, as the tdd evidence requires.
+      const commit = (message) => {
+        execFileSync("git", ["-c", "user.name=fake", "-c", "user.email=fake@example.invalid", "commit", "-q", "--allow-empty", "-m", message]);
+        return execFileSync("git", ["rev-parse", "--short", "HEAD"], { encoding: "utf8" }).trim();
+      };
+      const red = commit(`test: fake failing test attempt ${attempt}`);
+      const green = commit(`feat: fake development attempt ${attempt}`);
+      const plan = testPlanPath();
+      const tcs = plan && existsSync(plan) ? [...new Set(readFileSync(plan, "utf8").match(/\bTC-\d+\b/g) ?? [])] : [];
+      extras.commits = [red, green];
+      extras.tdd = [{ cases: tcs.length ? tcs : ["TC-01"], test: "test/fake.test.js", red: "fake test: 1 failing", red_commit: red, green: "fake test: 1 passing" }];
       break;
     }
     case "security":

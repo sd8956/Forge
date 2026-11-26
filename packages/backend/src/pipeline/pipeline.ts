@@ -35,6 +35,8 @@ const exitSpec = z.strictObject({
   pr_created: z.boolean().default(false),
   /** Every PR thread in the step's input is answered in `output.md` (review_fix). */
   threads_answered: z.boolean().default(false),
+  /** Every unit or integration case of the test plan has red/green evidence, its failing test committed first (development). */
+  tdd_evidence: z.boolean().default(false),
 });
 
 const stepKind = z.enum(STEP_KINDS, {
@@ -50,7 +52,7 @@ const stepSpec = z.strictObject({
   timeout_minutes: z.number().positive().max(24 * 60).optional(),
   /** Runs of this step allowed before the run needs a person (retries of the same step). */
   max_attempts: z.number().int().min(1).max(10).optional(),
-  exit: exitSpec.default({ requires: [], every_ac_has_tc: false, all_cases_pass: false, pr_created: false, threads_answered: false }),
+  exit: exitSpec.default({ requires: [], every_ac_has_tc: false, all_cases_pass: false, pr_created: false, threads_answered: false, tdd_evidence: false }),
   /** Where a reported failure sends the run, and how many failures of this step are allowed. */
   on_fail: z.strictObject({ goto: stepKind, max_attempts: z.number().int().min(1).max(10).optional() }).optional(),
 });

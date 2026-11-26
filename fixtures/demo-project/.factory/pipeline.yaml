@@ -21,7 +21,7 @@ steps:
     agent: forge-developer
     model: { default: sonnet, L: opus }
     settings: steps/developer.settings.json
-    exit: { requires: [dev-notes.md], command: make check }
+    exit: { requires: [dev-notes.md], command: make check, tdd_evidence: true }
 
   - id: security
     agent: forge-security
