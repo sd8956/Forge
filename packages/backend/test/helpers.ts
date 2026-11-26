@@ -27,6 +27,14 @@ export function scratch(prefix = "forge-test-"): string {
   return mkdtempSync(join(tmpdir(), prefix));
 }
 
+/**
+ * Removes a test's scratch directory. Killing tmux makes the fake claude send its last hook and write its trace on
+ * the way out, so the directory can still be written to for a moment: retry for up to 5 s instead of 1 s.
+ */
+export function removeScratch(root: string): void {
+  rmSync(root, { recursive: true, force: true, maxRetries: 50, retryDelay: 100 });
+}
+
 /** Kills a test tmux server and removes its socket file, which tmux leaves behind. */
 export async function disposeTmux(tmux: Tmux, socket: string): Promise<void> {
   await tmux.killServer();

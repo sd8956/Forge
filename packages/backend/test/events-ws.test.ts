@@ -1,9 +1,8 @@
-import { rmSync } from "node:fs";
 import { afterEach, describe, expect, it } from "vitest";
 import WebSocket from "ws";
 import { startBackend, type Backend } from "../src/app.js";
 import { Tmux } from "../src/runner/tmux.js";
-import { Api, disposeTmux, fakeEnv, makeProject, PLAN_ONLY_PIPELINE, scratch, StubMemory, testConfig, waitFor } from "./helpers.js";
+import { Api, disposeTmux, fakeEnv, makeProject, PLAN_ONLY_PIPELINE, scratch, StubMemory, testConfig, waitFor, removeScratch } from "./helpers.js";
 
 const cleanups: (() => Promise<void> | void)[] = [];
 afterEach(async () => {
@@ -16,7 +15,7 @@ async function setup() {
   const config = testConfig(root, { extraEnv: fakeEnv(root, { plan: ["done"] }) });
   const tmux = new Tmux(config.tmuxSocket);
   const backend: Backend = await startBackend(config, { memory: new StubMemory() });
-  cleanups.push(() => rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
+  cleanups.push(() => removeScratch(root));
   cleanups.push(() => disposeTmux(tmux, config.tmuxSocket));
   cleanups.push(() => backend.close());
   return { project, backend, api: new Api(backend.url, backend.token) };

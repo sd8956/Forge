@@ -75,6 +75,14 @@ test("shows the pipeline, the evidence and the artifacts of a run", async ({ pag
   await expect(page.getByRole("cell", { name: "TC-01" })).toBeVisible();
   await expect(page.getByRole("row", { name: /TC-04/ }).getByText("Passed")).toBeVisible();
   await page.screenshot({ path: join(shots, "run-evidence.png"), fullPage: true });
+  // A screenshot opens full size; the arrows move through every case's screenshots and Escape closes it.
+  await page.getByRole("button", { name: "Enlarge the evidence of TC-01" }).click();
+  const lightbox = page.getByRole("dialog", { name: "Evidence" });
+  await expect(lightbox).toContainText("TC-01 · step 1 of 1 · 01-step.png");
+  await page.keyboard.press("ArrowRight");
+  await expect(lightbox).toContainText("TC-02 · step 1 of 1");
+  await page.keyboard.press("Escape");
+  await expect(lightbox).toBeHidden();
 
   await page.getByRole("tab", { name: "Artifacts" }).click();
   await page.getByRole("button", { name: "plan/1/output.md" }).click();

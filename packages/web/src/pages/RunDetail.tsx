@@ -2,6 +2,7 @@ import type { StepView } from "@forge/shared";
 import { lazy, Suspense, useEffect, useState } from "react";
 import { api, runFileUrl, type Evidence, type RunDetail as Detail } from "../api.js";
 import { Badge } from "../components/Badge.js";
+import { Lightbox, type LightboxImage } from "../components/Lightbox.js";
 import { Icon } from "../components/Icon.js";
 // xterm.js is large: load it only when a terminal is shown.
 const Terminal = lazy(() => import("../components/Terminal.js").then((m) => ({ default: m.Terminal })));
@@ -40,12 +41,18 @@ function Timeline({ run, now }: { run: Detail; now: number }) {
 }
 
 function EvidenceTab({ run, evidence }: { run: Detail; evidence: Evidence | null }) {
+  const [open, setOpen] = useState<number | null>(null);
   if (!evidence) return <p className="muted">Loading…</p>;
   if (!evidence.testPlan.length && !evidence.cases.length) return <p className="muted">No test plan yet.</p>;
   const cases = new Map(evidence.cases.map((c) => [c.id, c]));
   const ids = [...new Set([...evidence.testPlan.map((t) => t.id), ...evidence.cases.map((c) => c.id)])];
   const file = (f: string) => (evidence.evidenceDir ? runFileUrl(run.id, `${evidence.evidenceDir}/${f}`) : "#");
   const shots = evidence.cases.flatMap((c) => c.files.filter((f) => f.endsWith(".png")).slice(0, 1).map((f) => ({ c, f })));
+  // Every screenshot of every case, in order, for the lightbox.
+  const gallery: LightboxImage[] = evidence.cases.flatMap((c) => {
+    const pngs = c.files.filter((f) => f.endsWith(".png"));
+    return pngs.map((f, i) => ({ src: file(f), caseId: c.id, name: f.split("/").at(-1) ?? f, step: i + 1, steps: pngs.length, result: c.result }));
+  });
   return (
     <>
       <div className="card">
@@ -80,13 +87,14 @@ function EvidenceTab({ run, evidence }: { run: Detail; evidence: Evidence | null
       {shots.length ? (
         <div className="shots">
           {shots.map(({ c, f }) => (
-            <div key={c.id} className="card shot">
+            <button key={c.id} type="button" className="card shot" aria-label={`Enlarge the evidence of ${c.id}`} onClick={() => setOpen(gallery.findIndex((g) => g.src === file(f)))}>
               <img src={file(f)} alt={`${c.id} evidence`} loading="lazy" />
               <div className="caption"><span className="mono small">{c.id}</span> <Badge tone={c.result === "passed" ? "done" : "failed"} label={c.result} /></div>
-            </div>
+            </button>
           ))}
         </div>
       ) : null}
+      {open !== null && open >= 0 ? <Lightbox images={gallery} start={open} onClose={() => setOpen(null)} /> : null}
     </>
   );
 }

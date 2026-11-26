@@ -1,10 +1,10 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { startBackend, type Backend } from "../src/app.js";
 import { Tmux } from "../src/runner/tmux.js";
-import { Api, disposeTmux, fakeEnv, makeProject, PLAN_ONLY_PIPELINE, readTrace, scratch, StubMemory, testConfig, waitFor, type RunDetail } from "./helpers.js";
+import { Api, disposeTmux, fakeEnv, makeProject, PLAN_ONLY_PIPELINE, readTrace, scratch, StubMemory, testConfig, waitFor, type RunDetail, removeScratch } from "./helpers.js";
 
 interface Ctx {
   root: string;
@@ -28,7 +28,7 @@ async function setup(behaviour: string, overrides: Parameters<typeof testConfig>
   const config = testConfig(root, { extraEnv: fakeEnv(root, { plan: [behaviour] }), ...overrides });
   const tmux = new Tmux(config.tmuxSocket);
   const backend = await startBackend(config, { memory: new StubMemory() });
-  cleanups.push(() => rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
+  cleanups.push(() => removeScratch(root));
   cleanups.push(() => disposeTmux(tmux, config.tmuxSocket));
   cleanups.push(() => backend.close());
   return { root, project, backend, api: new Api(backend.url, backend.token), tmux, config };

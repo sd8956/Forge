@@ -1,10 +1,10 @@
 import { execFileSync } from "node:child_process";
-import { readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
+import { readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { startBackend } from "../src/app.js";
 import { Tmux } from "../src/runner/tmux.js";
-import { Api, disposeTmux, FIXTURE, fakeEnv, makeProject, scratch, StubMemory, testConfig } from "./helpers.js";
+import { Api, disposeTmux, FIXTURE, fakeEnv, makeProject, scratch, StubMemory, testConfig, removeScratch } from "./helpers.js";
 
 const PLAN_AND_DESIGN = `version: 1
 steps:
@@ -28,7 +28,7 @@ describe("agent preflight", () => {
     const config = testConfig(root, { extraEnv: fakeEnv(root) });
     const tmux = new Tmux(config.tmuxSocket);
     const backend = await startBackend(config, { memory: new StubMemory() });
-    cleanups.push(() => rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
+    cleanups.push(() => removeScratch(root));
     cleanups.push(() => disposeTmux(tmux, config.tmuxSocket));
     cleanups.push(() => backend.close());
     const api = new Api(backend.url, backend.token);
