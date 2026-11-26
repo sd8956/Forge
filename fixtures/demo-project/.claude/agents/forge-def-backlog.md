@@ -14,6 +14,7 @@ report.
 
 - One file per task, `.factory/backlog/TASK-001.md`, in exactly the format of input.md: title heading, Covers, Size (S, M, L), Depends on, Prototype screens, Scope and acceptance criteria `- AC-1 (FR-001) Given ..., when ..., then ...`.
 - Every FR and NFR in `requirements.md` is covered by some task. Dependencies form no cycle.
+- Every acceptance criterion restates a criterion of the FR it names. Add no behaviour the requirements lack; list it under open questions instead.
 - The first task sets up the project so `make check` and `make e2e` from `project.yaml` work. Prefer S tasks; split anything L.
 - Write only inside `.factory/` (never `.factory/steps/`), with the Write and Edit tools. You have no Bash.
 - Do not commit; Forge commits each approved stage.

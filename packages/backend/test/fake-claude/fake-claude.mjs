@@ -103,12 +103,12 @@ function testPlanPath() {
 /** Valid `.factory/` files for each definition stage, like a stage session would write them. */
 const DEFINITION_FILES = {
   def_intake: {
-    ".factory/intake.md": "# Intake\n\nA link shortener for a small team. Web only.\n",
+    ".factory/intake.md": "# Intake\n\nA link shortener for a small team. Web only.\n\n> Paste a long link and get a short one that opens the original page.\n",
     ".factory/project.yaml": "name: shortener\nplatforms: [web]\n",
   },
   def_requirements: {
     ".factory/requirements.md":
-      "# Requirements\n\n### FR-001 Shorten a link\n\n- Given a valid URL, when I press \"Shorten\", then I see a short link.\n\n### FR-002 Open a short link\n\n- Given a short link, when I open it, then I am redirected.\n\n## Non-functional requirements\n\n- NFR-01 Performance: redirects answer in under 50 ms (p95).\n",
+      "# Requirements\n\n### FR-001 Shorten a link\n\nSource: intake \"Paste a long link and get a short one\"\n\n- Given a valid URL, when I press \"Shorten\", then I see a short link.\n\n### FR-002 Open a short link\n\nSource: intake \"a short one that opens the original page\"\n\n- Given a short link, when I open it, then I am redirected.\n\n## Non-functional requirements\n\n- NFR-01 Performance: redirects answer in under 50 ms (p95).\n",
   },
   def_architecture: {
     ".factory/architecture.md": "# Architecture\n\nNode server in src/, page in public/.\n",
