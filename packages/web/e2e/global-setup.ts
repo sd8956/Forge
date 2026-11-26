@@ -35,6 +35,11 @@ export default async function globalSetup(): Promise<void> {
   git("add", ".");
   git("commit", "-qm", "init");
   git("remote", "add", "origin", "git@github.com:example/demo-project.git");
+  // GitHub-looking, but a local bare repository: nothing in the e2e reaches the network.
+  const origin = join(root, "demo-project-origin.git");
+  execFileSync("git", ["init", "-q", "--bare", "-b", "main", origin]);
+  git("config", `url.${origin}.insteadOf`, "git@github.com:example/demo-project.git");
+  git("push", "-q", "origin", "main");
 
   // An empty clone of a new repository, for the Definition panel.
   const newApp = join(root, "newapp");
@@ -62,6 +67,7 @@ export default async function globalSetup(): Promise<void> {
     FORGE_CHECK_TRUST: "0",
     FORGE_ENGRAM_URL: `http://127.0.0.1:${engramPort}`,
     FORGE_PR_POLL_MS: "500",
+    FORGE_TEMPLATE_SYNC_MS: "0",
     FORGE_CLOSE_GRACE_MS: "100",
     FORGE_SWEEP_INTERVAL_MS: "300",
     FAKE_GH_STATE: ghState,

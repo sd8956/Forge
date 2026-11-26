@@ -313,6 +313,10 @@ test("changes Forge's limits and authentication in Settings, and shows the proje
   await expect(projectSettings).toContainText("auto");
   // Each command on its own row, its name apart from the command.
   await expect(projectSettings.getByRole("table", { name: "Commands" }).getByRole("row", { name: "check make check" })).toBeVisible();
+  // Forge files: the e2e project is a copy of the current template, so a check finds it up to date.
+  await expect(projectSettings.getByTestId("template-status")).toHaveText("Not checked yet");
+  await projectSettings.getByRole("button", { name: "Check now" }).click();
+  await expect(projectSettings.getByTestId("template-status")).toHaveText("Up to date");
   await page.screenshot({ path: join(shots, "settings.png"), fullPage: true });
 
   await page.getByRole("link", { name: "Execution" }).click();

@@ -82,6 +82,8 @@ export const api = {
     request<ForgeSettings>("/settings", { method: "PATCH", body: JSON.stringify(patch) }),
   saveApiKey: (key: string) => request<ForgeSettings>("/settings/api-key", { method: "PUT", body: JSON.stringify({ key }) }),
   removeApiKey: () => request<ForgeSettings>("/settings/api-key", { method: "DELETE" }),
+  templateStatus: (projectId: string) => request<TemplateSync>(`/projects/${projectId}/template`),
+  syncTemplate: (projectId: string) => request<TemplateSync>(`/projects/${projectId}/template/sync`, { method: "POST", body: "{}" }),
   projectSettings: (projectId: string) => request<ProjectSettings>(`/projects/${projectId}/settings`),
   definitions: () => request<{ projectId: string; repoPath: string; prUrl: string | null }[]>("/definitions"),
   definition: (projectId: string) => request<DefinitionView>(`/projects/${projectId}/definition`),
@@ -139,4 +141,14 @@ export interface ProjectSettings {
   allowedAuthors: string[];
   pollIntervalSeconds: number | null;
   commands: Record<string, string>;
+}
+
+export interface TemplateSync {
+  status: "never_checked" | "up_to_date" | "pr_opened" | "pr_updated" | "pr_open" | "skipped" | "failed";
+  reason?: string;
+  prUrl?: string | null;
+  updated?: string[];
+  added?: string[];
+  customized?: string[];
+  checkedAt?: number;
 }
