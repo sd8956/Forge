@@ -23,6 +23,10 @@ async function setup(pipelineOverride?: (yaml: string) => string, yamlOverride?:
   const project = makeProject(root);
   const git = (...args: string[]) => execFileSync("git", ["-C", project, "-c", "user.name=t", "-c", "user.email=t@example.invalid", ...args]);
   git("remote", "add", "origin", "git@github.com:example/demo-project.git");
+  // GitHub-looking for the watcher, but a local bare repository for git: tests never reach the network.
+  const origin = join(root, "origin.git");
+  execFileSync("git", ["init", "-q", "--bare", "-b", "main", origin]);
+  git("config", `url.${origin}.insteadOf`, "git@github.com:example/demo-project.git");
   // Use the test backend's fast default interval instead of the project's.
   const yamlFile = join(project, ".factory", "project.yaml");
   const yaml = readFileSync(yamlFile, "utf8").replace(/^\s*poll_interval_seconds: \d+\n/m, "");
@@ -32,6 +36,7 @@ async function setup(pipelineOverride?: (yaml: string) => string, yamlOverride?:
     writeFileSync(pipelineFile, pipelineOverride(readFileSync(pipelineFile, "utf8")));
   }
   git("commit", "-qam", "test config");
+  git("push", "-q", "-u", "origin", "main");
 
   const ghState = join(root, "gh.json");
   const state: GhState = {

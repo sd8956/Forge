@@ -21,6 +21,7 @@ import { runShell } from "../runner/shell.js";
 import { branchFor, ensureWorktree } from "../runner/worktree.js";
 import type { StepPolicy, StepService } from "../steps/step-service.js";
 import { loadProjectConfig } from "../projects/project-config.js";
+import { BaseSync, type BaseSyncResult } from "./base-sync.js";
 import { parseDependencies, unfinishedDependencyRuns, unmergedDependencies } from "./dependencies.js";
 import { isTrusted } from "./trust.js";
 
@@ -43,6 +44,8 @@ interface Deps {
   memoryProject: (projectPath: string) => string;
   /** Why no step may launch right now (the queue is paused), or null. */
   launchHold?: () => string | null;
+  /** Brings the project's base branch up to date before a task branches from it. */
+  baseSync?: BaseSync;
   now?: () => number;
   log?: (msg: string, extra?: Record<string, unknown>) => void;
 }
@@ -58,9 +61,13 @@ export class RunService implements StepPolicy {
   private readonly now: () => number;
   private readonly log: NonNullable<Deps["log"]>;
 
+  private readonly baseSync: BaseSync;
+
   constructor(private readonly deps: Deps) {
     this.now = deps.now ?? Date.now;
     this.log = deps.log ?? (() => undefined);
+    // Every task start fetches: a merge on GitHub must reach the very next task.
+    this.baseSync = deps.baseSync ?? new BaseSync(0);
     deps.steps.policy = this;
   }
 
@@ -70,6 +77,8 @@ export class RunService implements StepPolicy {
     const projectPath = resolve(req.projectPath);
     const pipeline = this.validateProject(projectPath, req.taskId);
     const baseBranch = (await git("git", ["-C", projectPath, "rev-parse", "--abbrev-ref", "HEAD"], { encoding: "utf8" })).stdout.trim();
+    // A task branches from the base: pull what was merged on GitHub first (a clean checkout on the base only).
+    const synced = await this.baseSync.sync(projectPath, baseBranch);
     const deps = parseDependencies(readFileSync(join(projectPath, ".factory", "backlog", `${req.taskId}.md`), "utf8"));
     const unfinished = unfinishedDependencyRuns(this.deps.runs.list(), projectPath, deps);
     const unmerged = [...new Set([...unfinished, ...(await unmergedDependencies(projectPath, baseBranch, deps))])];
@@ -89,8 +98,14 @@ export class RunService implements StepPolicy {
       baseBranch,
       currentStep: firstStep(pipeline),
     });
+    this.recordBaseSync(run.id, baseBranch, synced);
     await this.advance(run.id);
     return this.mustGet(run.id);
+  }
+
+  private recordBaseSync(runId: string, base: string, synced: BaseSyncResult): void {
+    if (synced.status === "updated") this.deps.runs.recordEvent(runId, "base_updated", { base });
+    else if (synced.status === "blocked") this.deps.runs.recordEvent(runId, "base_not_updated", { base, why: synced.why });
   }
 
   private validateProject(projectPath: string, taskId: string): Pipeline {
