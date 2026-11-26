@@ -49,7 +49,9 @@ export const STEP_CONTRACTS: Readonly<Record<StepKind, StepContract>> = {
       commits: z.array(sha).min(1),
       tdd: z
         .array(z.object({ cases: z.array(z.string().regex(/^TC-\d+$/)).min(1), test: z.string().min(1), red: z.string().min(1), red_commit: sha, green: z.string().min(1) }))
-        .min(1),
+        .min(1)
+        // Required by the `tdd_evidence` exit flag, not by the contract: a pipeline without the flag keeps working.
+        .optional(),
     }),
     extrasExample: {
       commits: ["1a2b3c4", "5d6e7f8"],
