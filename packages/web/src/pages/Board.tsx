@@ -27,21 +27,29 @@ function RunCard({ run, task, now }: { run: RunSummary; task: BacklogTask | unde
       ? (run.exitReason ?? (step?.permissionPrompts ? "Waiting for a permission answer" : "Waiting for a person"))
       : run.status === "waiting_review"
         ? run.prUrl
-          ? `PR #${run.prNumber ?? ""}${run.reviewRound ? ` · review round ${run.reviewRound}` : ""}`
+          ? null
           : "Awaiting review"
         : run.exitReason;
   return (
-    <a className={`card run-card${run.status === "needs_human" ? " attention" : ""}`} href={`#/runs/${run.id}`} data-testid={`run-card-${run.taskId}`}>
-      <div className="mono small muted">{run.taskId}</div>
-      <div className="title">{task?.title ?? run.taskId}</div>
+    <div className={`card run-card${run.status === "needs_human" ? " attention" : ""}`} data-testid={`run-card-${run.taskId}`}>
+      <a className="card-link" href={`#/runs/${run.id}`}>
+        <div className="mono small muted">{run.taskId}</div>
+        <div className="title">{task?.title ?? run.taskId}</div>
+      </a>
       <Badge tone={status.tone} label={status.label} />
       <div className="meta small muted">
         {step?.model ? `${step.model} · ` : ""}
         {duration(step?.startedAt ?? null, step?.endedAt ?? null, now)}
         {step && (step.permissionPrompts || step.toolDenials) ? ` · ${step.permissionPrompts} prompts · ${step.toolDenials} denied` : ""}
       </div>
+      {run.status === "waiting_review" && run.prUrl ? (
+        <div className="small muted">
+          <a className="pr-link" href={run.prUrl} target="_blank" rel="noreferrer">PR #{run.prNumber ?? ""}</a>
+          {run.reviewRound ? ` · review round ${run.reviewRound}` : ""}
+        </div>
+      ) : null}
       {detail ? <div className="small muted">{detail}</div> : null}
-    </a>
+    </div>
   );
 }
 

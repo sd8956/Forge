@@ -66,8 +66,18 @@ a { color: var(--brand); }
 .sidebar { border-right: 1px solid var(--border); padding: 20px 16px; display: flex; flex-direction: column; gap: 20px; background: var(--surface); }
 .logo { display: flex; align-items: center; gap: 10px; font: 600 22px var(--font-heading); letter-spacing: -0.02em; }
 .logo img { width: 32px; height: 32px; }
-.project-select { display: flex; flex-direction: column; gap: 2px; padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-2); }
-.project-select select { border: 0; background: transparent; color: var(--text); font: 500 14px var(--font-body); padding: 0; }
+/* Project picker: a button and a listbox, styled in both themes (a native select can't be styled when open). */
+.project-picker { position: relative; }
+.project-select { display: flex; flex-direction: column; align-items: stretch; gap: 2px; width: 100%; padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-2); color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.project-select:hover { border-color: var(--text-muted); }
+.project-select:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+.project-name { display: flex; justify-content: space-between; align-items: center; gap: 8px; font: 500 14px var(--font-body); }
+.project-name svg { color: var(--text-muted); flex: none; }
+.project-options { position: absolute; z-index: 20; top: calc(100% + 6px); left: 0; right: 0; margin: 0; padding: 4px; list-style: none; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18); max-height: 320px; overflow: auto; }
+.project-options:focus { outline: none; }
+.project-options li { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; border-radius: var(--radius-sm); cursor: pointer; }
+.project-options li.active { background: var(--surface-2); }
+.project-options li[aria-selected="true"] { color: var(--brand); font-weight: 600; }
 .nav a { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: var(--radius-sm); color: var(--text); text-decoration: none; font-weight: 500; }
 .nav a.active { background: var(--brand-soft); }
 .main { padding: 28px 32px; min-width: 0; }
@@ -104,7 +114,12 @@ a { color: var(--brand); }
 .board { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(180px, 1fr); gap: 12px; overflow-x: auto; padding-bottom: 8px; margin-bottom: 18px; }
 .column-title { display: flex; justify-content: space-between; font-weight: 600; font-size: 13px; padding: 0 4px 8px; }
 .column-cards { display: flex; flex-direction: column; gap: 10px; min-height: 120px; }
-.run-card { display: block; padding: 12px 14px; text-decoration: none; color: var(--text); }
+.run-card { position: relative; display: block; padding: 12px 14px; text-decoration: none; color: var(--text); }
+/* The card opens the run (a link stretched over it); the PR number is its own link on top. */
+.run-card .card-link { color: inherit; text-decoration: none; }
+.run-card .card-link::after { content: ""; position: absolute; inset: 0; border-radius: inherit; }
+.run-card .pr-link { position: relative; z-index: 1; color: inherit; text-decoration: underline; }
+.run-card .pr-link:hover { color: var(--brand); }
 .run-card:hover { border-color: var(--text-muted); }
 .run-card.attention { border-color: var(--st-needs_attention-fg); }
 .run-card .title { font-weight: 500; margin: 4px 0 8px; font-size: 15px; }
@@ -244,3 +259,4 @@ input.field { height: var(--control-height); }
 .commands td { padding: 1px 20px 1px 0; vertical-align: top; }
 @media (max-width: 700px) { .settings-list { grid-template-columns: 1fr; } }
 .template-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.project-options li .mono { font-weight: 400; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

@@ -59,7 +59,11 @@ describe("Board", () => {
     const review = within(screen.getByRole("region", { name: "Review" }));
     expect(review.getByText("Health endpoint")).toBeTruthy();
     expect(review.getByText("Awaiting review")).toBeTruthy();
-    expect(review.getByText("PR #4")).toBeTruthy();
+    // The PR number opens the PR on GitHub; the rest of the card still opens the run.
+    const prLink = review.getByRole("link", { name: "PR #4" });
+    expect(prLink.getAttribute("href")).toBe("https://x/pull/4");
+    expect(prLink.getAttribute("target")).toBe("_blank");
+    expect(review.getByRole("link", { name: /Health endpoint/ }).getAttribute("href")).toBe("#/runs/run-TASK-003");
     const prs = within(screen.getByRole("region", { name: "Pull requests" }));
     expect(prs.getByText("PR #4")).toBeTruthy();
     expect(prs.getByText("Awaiting review")).toBeTruthy();
