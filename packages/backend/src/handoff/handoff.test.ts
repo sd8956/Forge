@@ -139,6 +139,12 @@ describe("validateReport", () => {
     expect(runs).toBe(1);
   });
 
+  it("asks for red/green evidence only when the pipeline turns tdd_evidence on", async () => {
+    const plain = { requires: ["dev-notes.md"], every_ac_has_tc: false, all_cases_pass: false, pr_created: false, threads_answered: false, tdd_evidence: false };
+    const artifacts = output("development", { commits: ["abc1234"] }, { "dev-notes.md": "n" });
+    expect((await validateReport(ctx("development", { artifacts }, { exit: plain }))).ok).toBe(true);
+  });
+
   it("requires red/green evidence for every unit and integration case, with the failing test committed before the fix", async () => {
     write("plan-out/test-plan.md", "### TC-01 — rejects empty\n- Type: unit\n\n### TC-02 — lists todos\n- Type: e2e\n\n### TC-03 — caps the length\n- Type: integration\n");
     const testPlanPath = join(worktree, "plan-out/test-plan.md");
@@ -148,7 +154,7 @@ describe("validateReport", () => {
 
     expect(await check({ commits: ["abc1234"] })).toEqual({
       ok: false,
-      issues: [expect.stringMatching(/^output\.md frontmatter tdd: /), "tdd: TC-01 (unit) has no red/green evidence", "tdd: TC-03 (integration) has no red/green evidence"],
+      issues: ["tdd: list each test written first (cases, red, red_commit, green)", "tdd: TC-01 (unit) has no red/green evidence", "tdd: TC-03 (integration) has no red/green evidence"],
     });
     expect(await check({ commits: ["def5678"], tdd: tdd() })).toEqual({
       ok: false,
