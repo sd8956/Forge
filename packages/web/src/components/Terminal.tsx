@@ -32,6 +32,8 @@ export function useTmuxTerminal(path: string, control: boolean) {
     term.loadAddon(fit);
     term.open(container.current);
     fit.fit();
+    // In control mode the person types straight into the terminal.
+    if (control) term.focus();
     const socket = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}${path}?mode=${control ? "control" : "view"}`);
     socketRef.current = socket;
     const resize = () => {

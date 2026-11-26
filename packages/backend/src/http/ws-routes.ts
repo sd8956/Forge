@@ -19,7 +19,8 @@ export interface WsDeps {
 }
 
 const terminalMessage = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("input"), data: z.string().max(4096) }),
+  // A paste arrives as one message: long prompts must get through whole.
+  z.object({ type: z.literal("input"), data: z.string().max(65_536) }),
   z.object({ type: z.literal("resize"), cols: z.number().int().min(10).max(500), rows: z.number().int().min(5).max(200) }),
 ]);
 

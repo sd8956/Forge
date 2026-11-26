@@ -3,30 +3,14 @@ import { api, type OrchestratorSession, type Project } from "../api.js";
 import { useTmuxTerminal } from "./Terminal.js";
 
 function ConsoleTerminal({ projectId }: { projectId: string }) {
-  // The person's own session: always in control mode. They type in the terminal or in the box below.
-  const { container, state, send } = useTmuxTerminal(`/ws/console/${projectId}`, true);
-  const [message, setMessage] = useState("");
+  // The person's own session: always in control mode, typed into directly.
+  const { container, state } = useTmuxTerminal(`/ws/console/${projectId}`, true);
   return (
     <>
       <span className="muted small console-state">{state === "open" ? "Connected" : state === "closed" ? "Disconnected" : "Connecting"}</span>
       <div className="terminal console-terminal">
         <div className="terminal-screen" ref={container} data-testid="console-terminal" />
       </div>
-      <form
-        className="orchestrator-input"
-        onSubmit={(e) => {
-          e.preventDefault();
-          const text = message.trim();
-          if (text && send(text)) {
-            send("\r");
-            setMessage("");
-          }
-        }}
-      >
-        <label className="sr-only" htmlFor="console-message">Ask the console</label>
-        <input id="console-message" value={message} onChange={(e) => setMessage(e.target.value)} placeholder="Ask the console…" />
-        <button type="submit" className="btn primary" disabled={!message.trim() || state !== "open"}>Send</button>
-      </form>
     </>
   );
 }

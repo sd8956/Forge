@@ -351,8 +351,10 @@ test("opens the project console from any page, talks to it, and stops it", async
   await expect(drawer).toContainText("Claude Code on demo-project");
   await drawer.getByRole("button", { name: "Start console" }).click();
   await expect(drawer.getByTestId("console-terminal")).toContainText("fake claude ready", { timeout: 20_000 });
-  await drawer.getByLabel("Ask the console").fill("why is TASK-002 blocked?");
-  await drawer.getByRole("button", { name: "Send" }).click();
+  // The person types straight into the terminal, which has the focus when the console opens.
+  await expect(drawer.getByLabel("Ask the console")).toHaveCount(0);
+  await page.keyboard.type("why is TASK-002 blocked?");
+  await page.keyboard.press("Enter");
   // Keystrokes reach the session in chunks; join what the fake claude received.
   const typed = () =>
     readFileSync(join(state.root, "trace.jsonl"), "utf8")

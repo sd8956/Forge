@@ -13,7 +13,7 @@ writes), or a full Claude Code session in the project plus Forge's tools. The pe
 ## Decision
 
 - One console session per project (`forge-console-<id>` on Forge's tmux socket), in the project checkout, started from
-  a "Console" drawer available on every page; the person types in its terminal or in an "Ask the console" box.
+  a "Console" drawer available on every page; the person types straight into its terminal, which has the focus when it opens.
 - It is the person's own Claude Code: their settings apply (no `--setting-sources`), no agent, `--permission-mode
   default` so every command or edit asks them in the terminal. Forge adds only `disableBypassPermissionsMode` and, with
   an API key in Settings, `apiKeyHelper`.
