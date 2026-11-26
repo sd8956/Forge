@@ -280,3 +280,10 @@ input.field { height: var(--control-height); }
 .project-actions .actions { gap: 6px; }
 .small-btn { height: 30px; padding: 0 10px; font-size: 12px; flex: 1; justify-content: center; white-space: nowrap; }
 .project-actions p { margin: 6px 0 0; }
+
+/* Project console: a drawer at the bottom of the main column, on every page. */
+.nav-button { display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 12px; border: 0; border-radius: var(--radius-md); background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.nav-button:hover, .nav-button.active { background: var(--brand-soft); color: var(--brand); }
+.console-drawer { position: sticky; bottom: 0; z-index: 10; margin-top: 18px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.18); }
+.console-terminal { border-radius: 0; height: 42vh; }
+.console-state { padding: 0 14px; }

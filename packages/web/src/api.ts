@@ -78,6 +78,9 @@ export const api = {
     return request<MemoryList>(`/projects/${projectId}/memories${params.size ? `?${params.toString()}` : ""}`);
   },
   settings: () => request<ForgeSettings>("/settings"),
+  console: (projectId: string) => request<{ session: OrchestratorSession | null }>(`/projects/${projectId}/console`),
+  startConsole: (projectId: string) => request<{ session: OrchestratorSession }>(`/projects/${projectId}/console`, { method: "POST", body: "{}" }),
+  stopConsole: (projectId: string) => request<{ stopped: boolean }>(`/projects/${projectId}/console`, { method: "DELETE" }),
   openProject: (projectId: string, target: "editor" | "files") =>
     request<{ opened: string }>(`/projects/${projectId}/open`, { method: "POST", body: JSON.stringify({ target }) }),
   updateSettings: (patch: Partial<Pick<ForgeSettings, "maxConcurrency" | "usagePausePercent" | "auth" | "editorCommand" | "fileManagerCommand">>) =>

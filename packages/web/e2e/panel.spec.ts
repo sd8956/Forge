@@ -342,3 +342,30 @@ test("changes Forge's limits and authentication in Settings, and shows the proje
   await page.getByRole("button", { name: "Open in editor" }).click();
   await expect(page.locator(".project-actions").getByRole("alert")).toContainText("Could not start forge-no-such-editor");
 });
+
+test("opens the project console from any page, talks to it, and stops it", async ({ page }) => {
+  await login(page);
+  await page.getByRole("link", { name: "Memory" }).click();
+  await page.getByRole("button", { name: "Console" }).click();
+  const drawer = page.getByRole("region", { name: "Console" });
+  await expect(drawer).toContainText("Claude Code on demo-project");
+  await drawer.getByRole("button", { name: "Start console" }).click();
+  await expect(drawer.getByTestId("console-terminal")).toContainText("fake claude ready", { timeout: 20_000 });
+  await drawer.getByLabel("Ask the console").fill("why is TASK-002 blocked?");
+  await drawer.getByRole("button", { name: "Send" }).click();
+  // Keystrokes reach the session in chunks; join what the fake claude received.
+  const typed = () =>
+    readFileSync(join(state.root, "trace.jsonl"), "utf8")
+      .split("\n")
+      .filter(Boolean)
+      .map((l) => JSON.parse(l) as { type: string; data?: string })
+      .filter((t) => t.type === "stdin")
+      .map((t) => t.data ?? "")
+      .join("");
+  await expect.poll(typed, { timeout: 10_000 }).toContain("why is TASK-002 blocked?");
+  await page.screenshot({ path: join(shots, "console.png"), fullPage: true });
+  await drawer.getByRole("button", { name: "Stop" }).click();
+  await expect(drawer.getByRole("button", { name: "Start console" })).toBeVisible();
+  await drawer.getByRole("button", { name: "Close the console" }).click();
+  await expect(drawer).toBeHidden();
+});

@@ -14,9 +14,10 @@ Objective: a global console in the panel where the person opens Claude Code on t
 
 | ID | Specs | Route | Status | Commit |
 | --- | --- | --- | --- | --- |
-| T1 | S2, S3, S4 | inline | pending | |
-| T2 | S5 | inline | pending | |
+| T1 | S2, S3, S4 | inline | done | 28eed96 |
+| T2 | S5 | inline | done | feat(web) console commit |
 
 ## Log
 
 - L1 (2026-11-25) User asked for the console; offered A (Forge tools only) or B (full Claude Code + Forge tools). User: "vamos con B".
+- L2 Done: backend console + factory tools (28eed96), drawer with terminal and an Ask box (typing straight into xterm from a test was unreliable; the box sends whole lines). ADR 0014. 405 tests + 14 Playwright green; one unidentified test failed once in five full runs.
