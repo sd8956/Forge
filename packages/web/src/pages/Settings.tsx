@@ -140,6 +140,33 @@ function TemplateRow({ project }: { project: Project }) {
   );
 }
 
+function Apps({ settings, onSaved }: { settings: ForgeSettings; onSaved: (s: ForgeSettings) => void }) {
+  const [editor, setEditor] = useState(settings.editorCommand);
+  const [files, setFiles] = useState(settings.fileManagerCommand);
+  const { message, run } = useMessage();
+  return (
+    <section className="card panel settings-section" aria-label="Apps">
+      <h2>Apps</h2>
+      <p className="muted small">The programs "Open in editor" and "Open folder" start with the project's folder: a program name or a path, such as code, codium or thunar.</p>
+      <form
+        className="settings-grid"
+        onSubmit={(e) => {
+          e.preventDefault();
+          run(api.updateSettings({ editorCommand: editor.trim(), fileManagerCommand: files.trim() }), onSaved, "Saved.");
+        }}
+      >
+        <label htmlFor="editor-command">Editor command</label>
+        <input id="editor-command" className="field mono" value={editor} onChange={(e) => setEditor(e.target.value)} />
+        <label htmlFor="files-command">File manager command</label>
+        <input id="files-command" className="field mono" value={files} onChange={(e) => setFiles(e.target.value)} />
+        <span />
+        <button type="submit" className="btn primary">Save</button>
+      </form>
+      <Message message={message} />
+    </section>
+  );
+}
+
 function ProjectSection({ project }: { project: Project }) {
   const [settings, setSettings] = useState<ProjectSettings | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -201,6 +228,7 @@ export function SettingsPage({ project }: { project: Project | null }) {
         <>
           <Limits settings={settings} onSaved={setSettings} />
           <Authentication settings={settings} onSaved={setSettings} />
+          <Apps settings={settings} onSaved={setSettings} />
         </>
       ) : (
         <p className="muted">Loading…</p>

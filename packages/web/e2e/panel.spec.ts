@@ -39,6 +39,7 @@ test("adds a project from the empty panel", async ({ page }) => {
   await page.getByLabel("Repository path").fill(state.project);
   await page.getByRole("button", { name: "Add project" }).click();
   await expect(page.getByRole("heading", { name: "Execution" })).toBeVisible();
+  await page.getByRole("tab", { name: /Backlog/ }).click();
   await expect(page.getByText("Add and list todos")).toBeVisible();
 });
 
@@ -52,7 +53,8 @@ test("shows a run moving across the board live, ending in Awaiting review", asyn
   await api("/runs", { projectPath: state.project, taskId: "TASK-001" });
   const card = page.getByTestId("run-card-TASK-001");
   await expect(card).toBeVisible();
-  const prs = page.getByRole("region", { name: "Pull requests" });
+  await page.getByRole("tab", { name: /Pull requests/ }).click();
+  const prs = page.getByRole("tabpanel", { name: "Pull requests" });
   await expect(prs.getByTestId("pr-row-TASK-001")).toBeVisible({ timeout: 40_000 });
   await expect(prs.getByText("Awaiting review")).toBeVisible();
   await expect(prs.getByText("PR #7")).toBeVisible();
@@ -92,6 +94,7 @@ test("shows the pipeline, the evidence and the artifacts of a run", async ({ pag
 
 test("refuses to launch a task whose dependency is not merged", async ({ page }) => {
   await login(page);
+  await page.getByRole("tab", { name: /Backlog/ }).click();
   await expect(page.getByText("Waits for TASK-001 merge")).toBeVisible();
   await page.getByRole("button", { name: "Launch TASK-002" }).click();
   await expect(page.getByRole("alert")).toContainText("TASK-002 depends on TASK-001, which is not merged into main yet");
@@ -99,6 +102,7 @@ test("refuses to launch a task whose dependency is not merged", async ({ page })
 
 test("watches a live session read-only, takes control explicitly, and cancels the run", async ({ page }) => {
   await login(page);
+  await page.getByRole("tab", { name: /Backlog/ }).click();
   await page.getByRole("button", { name: "Launch TASK-003" }).click();
   const card = page.getByRole("region", { name: "Plan + test plan" }).getByTestId("run-card-TASK-003");
   await expect(card).toBeVisible();
@@ -119,7 +123,8 @@ test("answers a review comment and shows the thread as answered", async ({ page 
   const gh = JSON.parse(readFileSync(state.ghState, "utf8")) as { prs: Record<string, { comments: unknown[] }> };
   gh.prs["7"]?.comments.push({ id: 51, login: "sd8956", body: "Please rename createTodo", path: "src/server.js", line: 3, url: "https://github.com/example/demo-project/pull/7#discussion_r51" });
   writeFileSync(state.ghState, JSON.stringify(gh));
-  await expect(page.getByRole("region", { name: "Pull requests" }).getByText(/review round 1/)).toBeVisible({ timeout: 40_000 });
+  await page.getByRole("tab", { name: /Pull requests/ }).click();
+  await expect(page.getByRole("tabpanel", { name: "Pull requests" }).getByText(/review round 1/)).toBeVisible({ timeout: 40_000 });
   await page.getByRole("region", { name: "Review" }).getByTestId("run-card-TASK-001").click();
   await page.getByRole("tab", { name: "Review" }).click();
   await expect(page.getByRole("row", { name: /review_comment:51/ }).getByText("Answered")).toBeVisible();
@@ -157,12 +162,13 @@ test("approves a proposed plan in the panel, shows why it waits, and pauses and 
   await plan.getByRole("button", { name: "Approve plan" }).click();
   await expect(plan).toBeHidden();
 
-  const queued = page.getByRole("region", { name: "Queued" });
+  await page.getByRole("tab", { name: /Queued/ }).click();
+  const queued = page.getByRole("tabpanel", { name: "Queued" });
   await expect(queued.getByTestId("queued-TASK-003")).toContainText("Queue paused: Paused by a person");
   await page.getByRole("button", { name: "Resume queue" }).click();
   await expect(page.getByRole("region", { name: "Plan + test plan" }).getByTestId("run-card-TASK-003")).toBeVisible({ timeout: 20_000 });
   await expect(queued.getByText("Nothing queued.")).toBeVisible();
-  await expect(page.getByTestId("active-sessions")).toHaveText("1 of 3");
+  await expect(page.getByTestId("active-sessions")).toHaveText("1");
 });
 
 test("shows the usage window the status line reports", async ({ page }) => {
@@ -327,6 +333,81 @@ test("changes Forge's limits and authentication in Settings, and shows the proje
   await expect(projectSettings.getByTestId("template-status")).toHaveText("Up to date");
   await page.screenshot({ path: join(shots, "settings.png"), fullPage: true });
 
-  await page.getByRole("link", { name: "Execution" }).click();
-  await expect(page.getByTestId("active-sessions")).toContainText("of 2");
+  // The project buttons run the commands set here (a harmless program in the e2e).
+  const apps = page.getByRole("region", { name: "Apps" });
+  await apps.getByLabel("Editor command").fill("/usr/bin/true");
+  await apps.getByLabel("File manager command").fill("/usr/bin/true");
+  await apps.getByRole("button", { name: "Save" }).click();
+  await expect(apps.getByRole("status")).toHaveText("Saved.");
+  // Opening shows no message; a command that cannot start says why.
+  await page.getByRole("button", { name: "Open in editor" }).click();
+  await page.getByRole("button", { name: "Open folder" }).click();
+  await expect(page.locator(".project-actions").getByRole("alert")).toHaveCount(0);
+  await apps.getByLabel("Editor command").fill("forge-no-such-editor");
+  await apps.getByRole("button", { name: "Save" }).click();
+  await page.getByRole("button", { name: "Open in editor" }).click();
+  await expect(page.locator(".project-actions").getByRole("alert")).toContainText("Could not start forge-no-such-editor");
+});
+
+test("opens the project console from any page, talks to it, and stops it", async ({ page }) => {
+  await login(page);
+  await page.getByRole("link", { name: "Memory" }).click();
+  await page.getByRole("button", { name: "Console" }).click();
+  const drawer = page.getByRole("region", { name: "Console" });
+  await expect(drawer).toContainText("Claude Code on demo-project");
+  await drawer.getByRole("button", { name: "Start console" }).click();
+  await expect(drawer.getByTestId("console-terminal")).toContainText("fake claude ready", { timeout: 20_000 });
+  // The person types straight into the terminal, which has the focus when the console opens.
+  await expect(drawer.getByLabel("Ask the console")).toHaveCount(0);
+  await page.keyboard.type("why is TASK-002 blocked?");
+  await page.keyboard.press("Enter");
+  // Keystrokes reach the session in chunks; join what the fake claude received.
+  const typed = () =>
+    readFileSync(join(state.root, "trace.jsonl"), "utf8")
+      .split("\n")
+      .filter(Boolean)
+      .map((l) => JSON.parse(l) as { type: string; data?: string })
+      .filter((t) => t.type === "stdin")
+      .map((t) => t.data ?? "")
+      .join("");
+  await expect.poll(typed, { timeout: 10_000 }).toContain("why is TASK-002 blocked?");
+  // Selecting with the mouse copies to the clipboard: tmux selects, then hands the text over (OSC 52).
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.evaluate("navigator.clipboard.writeText('')");
+  const screenBox = await drawer.locator(".xterm-screen").boundingBox();
+  if (!screenBox) throw new Error("no terminal screen");
+  const firstRow = screenBox.y + 6;
+  await page.mouse.move(screenBox.x + 2, firstRow);
+  await page.mouse.down();
+  await page.mouse.move(screenBox.x + 90, firstRow, { steps: 5 });
+  await page.mouse.up();
+  await expect.poll(() => page.evaluate<string>("navigator.clipboard.readText()")).toContain("fake claude");
+  // The wheel must not scroll the panel's own copy of the screen (tmux keeps the history).
+  await drawer.getByTestId("console-terminal").hover();
+  await page.mouse.wheel(0, -600);
+  await page.mouse.wheel(0, -600);
+  expect(await drawer.locator(".xterm-viewport").evaluate((el: { scrollHeight: number; clientHeight: number }) => el.scrollHeight - el.clientHeight)).toBeLessThanOrEqual(1);
+  await expect(drawer.getByTestId("console-terminal")).toContainText("fake claude ready");
+  // Dragging the top edge up makes the console taller, and tmux gets the new size.
+  const rows = () => Number(execFileSync("tmux", ["-L", state.socket, "list-clients", "-F", "#{session_name} #{client_height}"], { encoding: "utf8" }).split("\n").find((l) => l.startsWith("forge-console-"))?.split(" ")[1]);
+  const before = { box: (await drawer.getByTestId("console-terminal").boundingBox())?.height ?? 0, rows: rows() };
+  const handle = drawer.getByRole("separator", { name: "Resize the console" });
+  const edge = await handle.boundingBox();
+  if (!edge) throw new Error("no resize handle");
+  await page.mouse.move(edge.x + edge.width / 2, edge.y + edge.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(edge.x + edge.width / 2, edge.y - 150, { steps: 5 });
+  await page.mouse.up();
+  await expect.poll(async () => (await drawer.getByTestId("console-terminal").boundingBox())?.height ?? 0).toBeGreaterThan(before.box + 100);
+  await expect.poll(rows).toBeGreaterThan(before.rows + 5);
+  // The keyboard works too: the arrows shrink and grow it.
+  const tall = (await drawer.getByTestId("console-terminal").boundingBox())?.height ?? 0;
+  await handle.focus();
+  await page.keyboard.press("ArrowDown");
+  await expect.poll(async () => (await drawer.getByTestId("console-terminal").boundingBox())?.height ?? 0).toBeLessThan(tall);
+  await page.screenshot({ path: join(shots, "console.png"), fullPage: true });
+  await drawer.getByRole("button", { name: "Stop" }).click();
+  await expect(drawer.getByRole("button", { name: "Start console" })).toBeVisible();
+  await drawer.getByRole("button", { name: "Close the console" }).click();
+  await expect(drawer).toBeHidden();
 });

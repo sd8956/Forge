@@ -141,6 +141,12 @@ a { color: var(--brand); }
 .tabs { overflow-x: auto; }
 .tabs button { white-space: nowrap; background: none; border: 0; border-bottom: 2px solid transparent; padding: 10px 14px; color: var(--text-muted); font: 500 14px var(--font-body); cursor: pointer; }
 .tabs button[aria-selected="true"] { color: var(--text); border-bottom-color: var(--brand); }
+.tab-count { display: inline-block; min-width: 20px; margin-left: 4px; padding: 0 6px; border-radius: 999px; background: var(--surface-2); color: var(--text-muted); font-size: 12px; text-align: center; }
+.tabs button[aria-selected="true"] .tab-count { background: var(--brand-soft); color: var(--brand); }
+.task-lists { margin-bottom: 18px; }
+.task-lists .tabs { margin-top: -6px; }
+.list-hint { margin: 0 0 6px; }
+.pager { display: flex; align-items: center; justify-content: flex-end; gap: 10px; padding-top: 10px; border-top: 1px solid var(--border); }
 table { width: 100%; border-collapse: collapse; }
 th, td { text-align: left; padding: 10px 12px; border-top: 1px solid var(--border); vertical-align: top; }
 th { font-weight: 500; color: var(--text-muted); border-top: 0; }
@@ -275,3 +281,19 @@ input.field { height: var(--control-height); }
 .lightbox-nav { position: sticky; top: 50%; z-index: 1; flex: none; width: 40px; height: 40px; margin: 0 6px; border-radius: 50%; border: 1px solid var(--border); background: var(--surface); color: var(--text); font-size: 24px; line-height: 1; cursor: pointer; }
 .lightbox-nav:disabled { opacity: 0.3; cursor: default; }
 .lightbox-hint { margin: 0; text-align: center; }
+
+/* Project buttons under the picker. */
+.project-actions .actions { gap: 6px; }
+.small-btn { height: 30px; padding: 0 10px; font-size: 12px; flex: 1; justify-content: center; white-space: nowrap; }
+.project-actions p { margin: 6px 0 0; }
+
+/* Project console: a drawer at the bottom of the main column, on every page. */
+.nav-button { display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 12px; border: 0; border-radius: var(--radius-md); background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.nav-button:hover, .nav-button.active { background: var(--brand-soft); color: var(--brand); }
+.console-drawer { position: sticky; bottom: 0; z-index: 10; margin-top: 18px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.18); }
+.console-terminal { border-radius: 0; height: 42vh; }
+.console-resize { height: 8px; flex: none; cursor: ns-resize; touch-action: none; position: relative; }
+.console-resize::after { content: ""; position: absolute; left: 50%; top: 2px; width: 40px; height: 4px; margin-left: -20px; border-radius: 2px; background: var(--border); }
+.console-resize:hover::after, .console-resize:focus-visible::after { background: var(--brand); }
+.console-resize:focus-visible { outline: none; }
+.console-state { padding: 0 14px; }

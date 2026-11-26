@@ -7,11 +7,16 @@ import { shellQuote } from "../runner/tmux.js";
 
 const KEY = "forge.settings";
 
+/** A program name or path, never a shell line: it is run directly with the project path as its only argument. */
+const command = z.string().trim().regex(/^[\w./+-]+$/, "A program name or path, such as code or /usr/bin/thunar");
+
 export const settingsPatch = z
   .object({
     maxConcurrency: z.number().int().min(1).max(10),
     usagePausePercent: z.number().int().min(1).max(100),
     auth: z.enum(["subscription", "api_key"]),
+    editorCommand: command,
+    fileManagerCommand: command,
   })
   .partial()
   .strict();
@@ -25,6 +30,10 @@ export interface EffectiveSettings {
   usagePausePercent: number;
   auth: "subscription" | "api_key";
   apiKey: { configured: boolean; last4: string | null };
+  /** Opens a project in the editor ("Open in editor"). */
+  editorCommand: string;
+  /** Opens a project's folder ("Open folder"). */
+  fileManagerCommand: string;
 }
 
 export class SettingsError extends Error {}
@@ -58,6 +67,8 @@ export class SettingsService {
       usagePausePercent: s.usagePausePercent ?? this.config.usagePausePercent,
       auth: s.auth === "api_key" && key ? "api_key" : "subscription",
       apiKey: { configured: Boolean(key), last4: key ? key.slice(-4) : null },
+      editorCommand: s.editorCommand ?? "code",
+      fileManagerCommand: s.fileManagerCommand ?? "xdg-open",
     };
   }
 

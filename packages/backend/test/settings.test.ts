@@ -1,4 +1,4 @@
-import { readFileSync, statSync } from "node:fs";
+import { chmodSync, existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { startBackend, type Backend } from "../src/app.js";
@@ -28,7 +28,7 @@ async function setup() {
 describe("settings", () => {
   it("overrides the session cap and the usage threshold from the panel, over the environment defaults", async () => {
     const ctx = await setup();
-    expect((await ctx.api.request("GET", "/settings")).body).toEqual({ maxConcurrency: 3, usagePausePercent: 90, auth: "subscription", apiKey: { configured: false, last4: null } });
+    expect((await ctx.api.request("GET", "/settings")).body).toEqual({ maxConcurrency: 3, usagePausePercent: 90, auth: "subscription", apiKey: { configured: false, last4: null }, editorCommand: "code", fileManagerCommand: "xdg-open" });
     const saved = await ctx.api.request("PATCH", "/settings", { maxConcurrency: 1, usagePausePercent: 75 });
     expect(saved.body).toMatchObject({ maxConcurrency: 1, usagePausePercent: 75 });
     expect((await ctx.api.request("GET", "/queue")).body).toMatchObject({ maxConcurrency: 1, usagePausePercent: 75 });
@@ -83,5 +83,36 @@ describe("settings", () => {
       maxConcurrency: null,
       commands: expect.objectContaining({ check: "make check" }) as Record<string, string>,
     });
+  });
+});
+
+describe("open a project", () => {
+  it("opens the project in the configured editor and file manager, with only the project's path", async () => {
+    const ctx = await setup();
+    const { id } = (await ctx.api.request("POST", "/projects", { path: ctx.project })).body as { id: string };
+    expect((await ctx.api.request("GET", "/settings")).body).toMatchObject({ editorCommand: "code", fileManagerCommand: "xdg-open" });
+
+    // Stand-ins that record how they were started.
+    const recorder = (name: string) => {
+      const bin = join(ctx.root, name);
+      writeFileSync(bin, `#!/bin/sh\necho "$@" > ${join(ctx.root, `${name}.args`)}\n`);
+      chmodSync(bin, 0o755);
+      return bin;
+    };
+    const editor = recorder("editor");
+    const files = recorder("files");
+    expect((await ctx.api.request("PATCH", "/settings", { editorCommand: editor, fileManagerCommand: files })).status).toBe(200);
+    expect((await ctx.api.request("PATCH", "/settings", { editorCommand: "code; rm -rf ~" })).status).toBe(400);
+
+    expect((await ctx.api.request("POST", `/projects/${id}/open`, { target: "editor" })).body).toEqual({ opened: "editor" });
+    expect((await ctx.api.request("POST", `/projects/${id}/open`, { target: "files" })).body).toEqual({ opened: "files" });
+    const args = (name: string) => waitFor(() => (existsSync(join(ctx.root, `${name}.args`)) ? readFileSync(join(ctx.root, `${name}.args`), "utf8").trim() : undefined), `${name} to start`);
+    expect(await args("editor")).toBe(ctx.project);
+    expect(await args("files")).toBe(ctx.project);
+
+    // A missing command is reported, not swallowed.
+    await ctx.api.request("PATCH", "/settings", { editorCommand: "forge-no-such-editor" });
+    expect((await ctx.api.request("POST", `/projects/${id}/open`, { target: "editor" })).body).toMatchObject({ message: expect.stringContaining("forge-no-such-editor") as string });
+    expect((await ctx.api.request("POST", `/projects/${id}/open`, { target: "terminal" })).status).toBe(400);
   });
 });

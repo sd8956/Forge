@@ -25,6 +25,8 @@ export class Tmux {
     for (let attempt = 1; ; attempt++) {
       try {
         await this.tmux(args);
+        // The wheel scrolls tmux's own history (copy mode), never the panel's copy of the screen.
+        await this.tmux(["set-option", "-t", `=${opts.name}:`, "mouse", "on"]);
         return;
       } catch (error) {
         const stderr = String((error as { stderr?: string }).stderr ?? error);

@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import type { Duplex } from "node:stream";
 import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
@@ -16,6 +16,8 @@ import type { DefinitionService } from "../definition/definition-service.js";
 import { apiKeyInput, settingsPatch, SettingsError, type SettingsService } from "../settings/settings-service.js";
 import { loadProjectConfig } from "../projects/project-config.js";
 import type { TemplateSyncService } from "../template/template-sync-service.js";
+import type { ConsoleService } from "../console/console-service.js";
+import { registerConsoleRoutes } from "./console-routes.js";
 import type { PrThreadStore } from "../db/pr-thread-store.js";
 import type { ProjectStore } from "../db/project-store.js";
 import { DuplicateRunError, toRunView, type RunStore } from "../db/run-store.js";
@@ -56,6 +58,7 @@ interface ServerDeps {
   definition: DefinitionService;
   settings: SettingsService;
   templateSync: TemplateSyncService;
+  console: ConsoleService;
   config: ForgeConfig;
   bus: EventBus;
   tmuxSocket: string;
@@ -127,6 +130,10 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
       return project ? await deps.orchestrator.status(project) : null;
     },
     // The panel reconnects the orchestrator terminal on every render; record the takeover once per session.
+    consoleSession: async (projectId) => {
+      const project = deps.projects.get(projectId);
+      return project ? ((await deps.console.status(project))?.tmuxSession ?? null) : null;
+    },
     onOrchestratorControl: (projectId, session) => {
       const key = `${session.tmuxSession}@${session.startedAt}`;
       if (controlled.get(projectId) === key) return;
@@ -167,6 +174,31 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
       return settingsRefused(reply, error);
     }
   });
+  /**
+   * Opens the project in the person's editor or file manager. The program comes from Settings (a name or a path,
+   * never a shell line) and its only argument is the project path from the database, never request input.
+   */
+  app.post("/projects/:projectId/open", async (request, reply) => {
+    const params = z.object({ projectId: z.uuid() }).safeParse(request.params);
+    const body = z.object({ target: z.enum(["editor", "files"]) }).safeParse(request.body ?? {});
+    if (!params.success) return badRequest(reply, params.error);
+    if (!body.success) return badRequest(reply, body.error);
+    const project = deps.projects.get(params.data.projectId);
+    if (!project) return reply.code(404).send({ error: "unknown_project" });
+    const settings = deps.settings.get();
+    const program = body.data.target === "editor" ? settings.editorCommand : settings.fileManagerCommand;
+    const started = await new Promise<string | null>((done) => {
+      const child = spawn(program, [project.repoPath], { detached: true, stdio: "ignore" });
+      child.once("spawn", () => {
+        child.unref();
+        done(null);
+      });
+      child.once("error", (error) => done(error.message));
+    });
+    if (started) return reply.code(500).send({ error: "open_failed", message: `Could not start ${program}: ${started}. Set the command in Settings.` });
+    return { opened: body.data.target };
+  });
+
   /** Forge-file updates for a project: the last check, and a check now ("Check now" in Settings). */
   app.get("/projects/:projectId/template", (request, reply) => {
     const params = z.object({ projectId: z.uuid() }).safeParse(request.params);
@@ -201,6 +233,19 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     } catch (error) {
       return reply.code(409).send({ error: "invalid_project", message: error instanceof Error ? error.message : String(error) });
     }
+  });
+
+  registerConsoleRoutes(app, {
+    config: deps.config,
+    plans: deps.plans,
+    runs: deps.runs,
+    runService: deps.runService,
+    scheduler: deps.scheduler,
+    projects: deps.projects,
+    console: deps.console,
+    steps: deps.store,
+    threads: deps.threads,
+    baseBranch: async (projectPath) => (await gitStdout(["-C", projectPath, "rev-parse", "--abbrev-ref", "HEAD"])) || "main",
   });
 
   registerOrchestratorRoutes(app, {

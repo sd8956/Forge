@@ -7,6 +7,8 @@ import { SettingsPage } from "./pages/Settings.js";
 import { Icon } from "./components/Icon.js";
 import { UsageWidget } from "./components/UsageWidget.js";
 import { ProjectPicker } from "./components/ProjectPicker.js";
+import { ProjectActions } from "./components/ProjectActions.js";
+import { ConsoleDrawer } from "./components/ConsoleDrawer.js";
 import { Board } from "./pages/Board.js";
 import { RunDetail } from "./pages/RunDetail.js";
 import { useEvents } from "./useEvents.js";
@@ -69,6 +71,7 @@ export function App() {
   const [plans, setPlans] = useState<PlanView[]>([]);
   const [orchestrator, setOrchestrator] = useState<OrchestratorSession | null>(null);
   const [definition, setDefinition] = useState<DefinitionView | null | undefined>(undefined);
+  const [consoleOpen, setConsoleOpen] = useState(false);
   const [now, setNow] = useState(Date.now());
   const [unauthorized, setUnauthorized] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -138,11 +141,17 @@ export function App() {
             }
           }}
         />
+        {project ? <ProjectActions project={project} /> : null}
         <nav className="nav" aria-label="Main">
           <a href="#/" className={onDefinition || onMemory || onSettings ? "" : "active"}><Icon name="board" /> Execution</a>
           <a href="#/definition" className={onDefinition ? "active" : ""}><Icon name="pencil" /> Definition</a>
           <a href="#/memory" className={onMemory ? "active" : ""}><Icon name="memory" /> Memory</a>
           <a href="#/settings" className={onSettings ? "active" : ""}><Icon name="settings" /> Settings</a>
+          {project ? (
+            <button type="button" className={`nav-button${consoleOpen ? " active" : ""}`} aria-pressed={consoleOpen} onClick={() => setConsoleOpen(!consoleOpen)}>
+              <Icon name="terminal" /> Console
+            </button>
+          ) : null}
         </nav>
         {onDefinition && definition ? (
           <div className="factory-tree" aria-label=".factory files">
@@ -180,6 +189,7 @@ export function App() {
         ) : (
           <p className="muted">Loading…</p>
         )}
+        {consoleOpen && project ? <ConsoleDrawer key={project.id} project={project} onClose={() => setConsoleOpen(false)} /> : null}
       </main>
     </div>
   );

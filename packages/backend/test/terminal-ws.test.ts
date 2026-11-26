@@ -62,6 +62,17 @@ describe("/ws/terminal", () => {
     expect((await api.step(step.id)).events.some((e) => e.type === "operator_control")).toBe(true);
   });
 
+  it("forwards a long paste whole, beyond 4096 characters", async () => {
+    const { backend, step, cookie, root } = await setup();
+    const { socket, screen } = await open(backend, `/ws/terminal/${step.id}?mode=control`, cookie);
+    await waitFor(() => screen().includes("fake claude ready"), "the session screen");
+    const paste = Array.from({ length: 120 }, (_, i) => `line ${String(i).padStart(3, "0")} ${"x".repeat(40)}\r`).join("");
+    expect(paste.length).toBeGreaterThan(4096);
+    socket.send(JSON.stringify({ type: "input", data: paste }));
+    const typed = () => readTrace(root).filter((t) => t.type === "stdin").map((t) => String(t.data)).join("");
+    await waitFor(() => typed().includes("line 119"), "the end of the paste to reach the session", 10_000);
+  });
+
   it("refuses finished or unknown steps and connections without a session", async () => {
     const { backend, cookie } = await setup();
     const closed = await new Promise<number>((resolve) => {
