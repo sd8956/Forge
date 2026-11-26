@@ -22,7 +22,9 @@ writes), or a full Claude Code session in the project plus Forge's tools. The pe
   an optional base merge), `cancel_run`, `start_task`, `pause_queue`, `resume_queue`. They call the same services as the
   panel, so every state change goes through the transition tables.
 - An appended system prompt tells it to check `active_steps` before editing a task's worktree, never to edit one whose
-  step is live, and to change run and queue state only through the tools.
+  step is live, and to change run and queue state only through the tools. It also maps the project (`.factory/` files,
+  each step's `input.md` and `output.md` under `.factory/runs/<TASK>/<step>/<attempt>/`) and says how to look into a
+  stuck task (`get_status`, `get_run`, then the step's handoff and the task's spec), so it does not explore first.
 
 ## Consequences
 

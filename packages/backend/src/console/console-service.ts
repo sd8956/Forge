@@ -19,6 +19,15 @@ export const CONSOLE_PROMPT = [
   "Before editing files in a task's worktree (.worktrees/TASK-xxx), call active_steps: never edit a worktree whose step",
   "session is live; pause the queue or wait. Change run and queue state only through those tools, never by hand",
   "(no editing Forge's database, no killing tmux sessions). A person merges every pull request.",
+  "Where things are: .factory/project.yaml has the project's commands (check, e2e) and policies; .factory/pipeline.yaml",
+  "lists the steps every task goes through; .factory/requirements.md, architecture.md, test-strategy.md, adr/ and",
+  "design/ hold the definition; each task's spec is .factory/backlog/TASK-xxx.md. In a task's worktree, each step leaves",
+  ".factory/runs/<TASK>/<step>/<attempt>/ with input.md (what the step was asked), output.md (its handoff) and its",
+  "artifacts, such as test evidence.",
+  "When a task is stuck: get_status says why queued tasks wait; get_run gives each step's status (needs_human,",
+  "blocked or failed), exit reason, summary and the last events; then read that step's input.md and output.md and the",
+  "task's spec before proposing a fix. needs_human means the session waits for a person in the panel; blocked and",
+  "failed end the step and stop the run; resume_run resumes it once the cause is fixed.",
 ].join(" ");
 
 interface Deps {

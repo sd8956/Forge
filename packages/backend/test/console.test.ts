@@ -86,6 +86,10 @@ describe("project console", () => {
     const prompt = argv[argv.indexOf("--append-system-prompt") + 1]!;
     expect(prompt).toContain("active_steps");
     expect(prompt).toContain("never by hand");
+    // A map of the project and how to look into a blocked task, so it does not have to explore first.
+    for (const part of [".factory/backlog/TASK-xxx.md", ".factory/pipeline.yaml", ".factory/project.yaml", ".factory/runs/<TASK>/<step>/<attempt>/", "needs_human", "get_run"]) {
+      expect(prompt).toContain(part);
+    }
 
     const status = (await ctx.api.request("GET", `/projects/${ctx.id}/console`)).body as { session: { tmuxSession: string } };
     expect(status.session.tmuxSession).toMatch(/^forge-console-/);
