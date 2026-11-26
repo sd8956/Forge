@@ -14,10 +14,11 @@ Objective: projects get Forge's latest agents, skills, pipeline and step setting
 
 | ID | Specs | Route | Status | Commit |
 | --- | --- | --- | --- | --- |
-| T1 | S1, S2 | inline | pending | |
-| T2 | S3, S4 | inline | pending | |
-| T3 | S4 | inline | pending | |
+| T1 | S1, S2 | inline | done | dc17759 |
+| T2 | S3, S4 | inline | done | c02b9d6, da411af |
+| T3 | S4 | inline | done | 8d418b0 |
 
 ## Log
 
 - L1 (2026-11-25) Real conflict round on daily-tasks PR #4 worked (MERGEABLE CLEAN) but no PR comment: the project's copy of pr-thread-reply predates the conflict section. Options offered: (1) backend posts replies for conflict/check threads, (2) update the template in existing projects. User: "yo creo que lo ideal es la 2 que se actualice el proyecto automaticamente para tener lo ultimo siempre".
+- L2 Done. Real: on service restart, sync opened sd8956/forge-sandbox#7 (1 updated, 8 added, security-scan left alone as customized) and sd8956/forge-definition-sandbox#5 (5 updated incl. pr-thread-reply with the conflict section, 1 added). Bug found: git remote get-url applies insteadOf and hid the GitHub slug (da411af). 394 tests + 13 Playwright green; the e2e no longer reaches the network.
