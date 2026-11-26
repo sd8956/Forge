@@ -46,11 +46,16 @@ export const STEP_CONTRACTS: Readonly<Record<StepKind, StepContract>> = {
     extrasExample: { commits: ["1a2b3c4"] },
   },
   security: {
-    goal: "Review the task's changes against the threat model: run Semgrep, gitleaks and osv-scanner, then confirm or discard each finding. Critical or high findings mean `failed`.",
+    goal: "Review the task's changes against the threat model: run Semgrep, gitleaks and osv-scanner, then confirm or discard each finding with a command you ran. Critical or high findings this task introduced mean `failed`; findings already on the base are listed and never block.",
     reads: [".factory/threat-model.md", ".factory/requirements.md"],
-    outputs: [{ file: "security-report.md", description: "Every finding with tool, file, severity, verdict (confirmed or discarded) and reason." }],
-    extras: z.object({ findings: z.object({ critical: count, high: count, medium: count, low: count }) }),
-    extrasExample: { findings: { critical: 0, high: 0, medium: 0, low: 0 } },
+    outputs: [{ file: "security-report.md", description: "Every finding with tool, file, severity, origin (introduced or pre-existing), verdict, the command that proves it and reason." }],
+    // `findings` counts confirmed findings this task introduced (they decide the outcome); `preexisting` counts
+    // confirmed findings that were already on the base (listed for follow-up, never blocking).
+    extras: z.object({
+      findings: z.object({ critical: count, high: count, medium: count, low: count }),
+      preexisting: z.object({ critical: count, high: count, medium: count, low: count }).optional(),
+    }),
+    extrasExample: { findings: { critical: 0, high: 0, medium: 0, low: 0 }, preexisting: { critical: 0, high: 0, medium: 0, low: 0 } },
   },
   e2e: {
     goal: "Run every `TC-xx` of the test plan end to end with Playwright and save evidence. Specs live in `e2e/` and are committed.",

@@ -106,6 +106,14 @@ describe("validateReport", () => {
     expect((await validateReport(ctx("security", { artifacts: [], status: "failed" }))).ok).toBe(false);
   });
 
+  it("lets security report done when the only serious findings were already on the base", async () => {
+    const none = { critical: 0, high: 0, medium: 0, low: 0 };
+    const artifacts = output("security", { findings: none, preexisting: { ...none, high: 1 } }, { "security-report.md": "r" });
+    expect((await validateReport(ctx("security", { artifacts }))).ok).toBe(true);
+    const bad = output("security", { findings: none, preexisting: { ...none, high: -1 } }, { "security-report.md": "r" });
+    expect((await validateReport(ctx("security", { artifacts: bad }))).ok).toBe(false);
+  });
+
   it("runs the exit command only when everything else is valid, and reports its output", async () => {
     const artifacts = output("development", { commits: ["abc1234"] }, { "dev-notes.md": "n" });
     let runs = 0;

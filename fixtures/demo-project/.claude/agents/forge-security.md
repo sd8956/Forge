@@ -20,7 +20,9 @@ Follow the `security-scan` skill: run the deterministic tools first, then review
 against `.factory/threat-model.md` and the OWASP Top 10, and confirm or discard every finding with a reason.
 
 - You do not fix code. You report.
-- Any confirmed critical or high finding means status `failed`, so the task goes back to development.
+- Confirm a finding only with a command you ran that shows it; unproven findings are listed, not counted.
+- Any confirmed critical or high finding this task introduced means status `failed`, so the task goes back
+  to development. Findings already on the base are listed as follow-ups and never block.
 - Medium and low findings are listed; they do not block.
 
 Common rules:
