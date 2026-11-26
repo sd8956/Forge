@@ -23,8 +23,8 @@ Assumption (A1): the template source is `fixtures/demo-project` (`.claude/` and 
 | --- | --- | --- | --- | --- |
 | T1 | S1 | inline | done (RED→GREEN handoff.test; review risk: approved) | 032a7e4 |
 | T2 | S2 | inline | done (RED→GREEN handoff.test; assess medium, under budget) | 49dd62f |
-| T3 | S3 | inline | pending | |
-| T4 | S4 | inline | pending | |
+| T3 | S3 | inline | done (RED→GREEN handoff.test) | 8e58839 |
+| T4 | S4 | inline | done (RED→GREEN definition-validators.test) | 0b38c2a |
 | T5 | S5 | inline | done (RED→GREEN handoff.test) | d343805 |
 | T6 | S6 | inline | done (RED→GREEN definition-validators.test) | f5c65c3 |
 | T7 | S7 | inline | done (RED→GREEN handoff.test) | 69d930a |
@@ -41,3 +41,4 @@ Route evidence: no Writer trigger (units are sequential edits of one template pl
 - L5 T1 done (032a7e4): `preexisting` counts in the security contract; skill requires a proving command and an origin per finding. gentle-ai review (risk lens) approved; advisory WARNING: the backend cannot verify that a finding is really pre-existing (agent-reported). Follow-up: the code_review step (T8) or a backend lockfile diff could cross-check it.
 - L6 T2 done (49dd62f): development `tdd` extras + `tdd_evidence` exit flag (every unit/integration TC covered, git confirms each red_commit precedes the tip); input.md asks to question the premise from the second failure of a gate; developer prompt with one test per rule and two imagined edits. Assess: medium, under_budget (pending in slice).
 - L7 T5 (d343805): `escalated` thread action; claims checked before acting, dismissals need proof. T6 (f5c65c3): FR `Source:` line checked word for word against intake.md, assumptions counted in the stage summary. T7 (69d930a): pr.md six sections, at most 40 lines, checked under `pr_created`. Slice PR1 assess since 032a7e4: medium, under_budget (354 lines), no review due. Checks: lint 0, typecheck 0, 417 tests, 14 e2e.
+- L8 PR1 opened: #14 (feat/template-quality → main). T3 (8e58839): manifest `proves` per case, `criteria`/`requirements` verdicts checked (missing, unmet, unknown case); panel reads stored manifests with a lenient schema. T4 (0b38c2a): design validator needs color/radius/typography tokens and a `Library:` line per component; prompts name libraries, one standout per screen, worst-case data shots. Slice PR2: 179 lines, medium, no review due. Checks: 420 tests, 14 e2e.
