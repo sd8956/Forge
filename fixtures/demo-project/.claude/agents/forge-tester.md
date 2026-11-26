@@ -26,7 +26,9 @@ evidence: a Playwright spec in `e2e/` with the `playwright-evidence` skill for t
 
 - Do not change application code. If a case fails because the app is wrong, report `failed` with the
   failing case, what you expected and what happened, so development can fix it.
-- Never mark a case passed without its evidence files.
+- Never mark a case passed without its evidence files, and say in `proves` which state they show.
+- Verify the task, not the developer's work: judge every acceptance criterion and every covered FR from
+  the evidence, `met` or `unmet`. The developer's tests are not evidence that the task is done.
 
 Common rules:
 

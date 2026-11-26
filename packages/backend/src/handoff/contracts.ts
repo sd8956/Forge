@@ -69,7 +69,7 @@ export const STEP_CONTRACTS: Readonly<Record<StepKind, StepContract>> = {
     extrasExample: { findings: { critical: 0, high: 0, medium: 0, low: 0 }, preexisting: { critical: 0, high: 0, medium: 0, low: 0 } },
   },
   e2e: {
-    goal: "Run every `TC-xx` of the test plan end to end with Playwright and save evidence. Specs live in `e2e/` and are committed.",
+    goal: "Run every `TC-xx` of the test plan end to end with Playwright and save evidence that names the state it proves. Then give a met or unmet verdict for every acceptance criterion and every FR the task covers, citing the cases that decide it. Specs live in `e2e/` and are committed.",
     reads: [".factory/test-strategy.md"],
     outputs: [
       { file: "test-report.md", description: "One row per TC: result, duration and evidence files." },
@@ -101,6 +101,8 @@ export const STEP_CONTRACTS: Readonly<Record<StepKind, StepContract>> = {
 
 export const SEVERITIES = ["low", "medium", "high", "critical"] as const;
 
+const verdict = (id: RegExp) => z.object({ id: z.string().regex(id), verdict: z.enum(["met", "unmet"]), cases: z.array(z.string().regex(/^TC-\d+$/)).min(1) });
+
 /** Evidence manifest written by the e2e step. */
 export const evidenceManifest = z.object({
   task: z.string(),
@@ -110,10 +112,22 @@ export const evidenceManifest = z.object({
         id: z.string().regex(/^TC-\d+$/),
         frs: z.array(z.string()).default([]),
         result: z.enum(["passed", "failed", "skipped"]),
+        /** The state the evidence shows, such as "the list shows Buy milk first". */
+        proves: z.string().trim().min(1),
         /** Paths relative to the manifest's directory. */
         files: z.array(z.string().min(1)).default([]),
       }),
     )
     .min(1),
+  /** A verdict for every acceptance criterion of the task, with the cases that decide it. */
+  criteria: z.array(verdict(/^AC-\d+$/)).default([]),
+  /** A verdict for every FR the task covers. */
+  requirements: z.array(verdict(/^N?FR-\d+$/)).default([]),
 });
 export type EvidenceManifest = z.infer<typeof evidenceManifest>;
+
+/** How the panel reads stored manifests: runs written before `proves` and the verdicts existed still show. */
+export const storedEvidenceManifest = z.object({
+  task: z.string(),
+  cases: z.array(evidenceManifest.shape.cases.element.extend({ proves: z.string().optional() })),
+});

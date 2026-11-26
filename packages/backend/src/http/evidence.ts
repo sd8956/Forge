@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import type { StepRow } from "../db/schema.js";
-import { evidenceManifest } from "../handoff/contracts.js";
+import { storedEvidenceManifest } from "../handoff/contracts.js";
 import { parseFrontmatter } from "../handoff/frontmatter.js";
 
 export interface RunEvidence {
@@ -46,7 +46,7 @@ export function runEvidence(steps: StepRow[], handoffRoot: (step: StepRow) => st
     const file = join(dir, "manifest.json");
     if (existsSync(file)) {
       try {
-        cases = evidenceManifest.parse(JSON.parse(readFileSync(file, "utf8"))).cases;
+        cases = storedEvidenceManifest.parse(JSON.parse(readFileSync(file, "utf8"))).cases;
         evidenceDir = relative(handoffRoot(e2e), dir);
       } catch {
         cases = [];

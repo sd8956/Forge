@@ -184,9 +184,13 @@ function produce(status) {
       const tcs = plan && existsSync(plan) ? [...new Set(readFileSync(plan, "utf8").match(/\bTC-\d+\b/g) ?? [])] : ["TC-01"];
       const cases = tcs.map((id, i) => {
         files.push(writeFile(join(outputDir, "evidence", id, "01-step.png"), "png"));
-        return { id, frs: ["FR-001"], result: status === "failed" && i === 0 ? "failed" : "passed", files: [`${id}/01-step.png`] };
+        return { id, frs: ["FR-001"], result: status === "failed" && i === 0 ? "failed" : "passed", proves: `fake state of ${id}`, files: [`${id}/01-step.png`] };
       });
-      out("evidence/manifest.json", JSON.stringify({ task: taskId, cases }, null, 2));
+      const spec = readFileSync(join(".factory", "backlog", `${taskId}.md`), "utf8");
+      const covers = /^\s*-\s*Covers:\s*(.+)$/im.exec(spec)?.[1] ?? "";
+      const verdicts = (found) => [...new Set(found ?? [])].map((id) => ({ id, verdict: status === "failed" ? "unmet" : "met", cases: [cases[0].id] }));
+      const manifest = { task: taskId, cases, criteria: verdicts(spec.match(/\bAC-\d+\b/g)), requirements: verdicts(covers.match(/\bFR-\d+\b/g)) };
+      out("evidence/manifest.json", JSON.stringify(manifest, null, 2));
       out("test-report.md", `# Test report\n${cases.map((c) => `| ${c.id} | ${c.result} |`).join("\n")}\n`);
       const failed = cases.filter((c) => c.result === "failed").length;
       extras.tests = { total: cases.length, passed: cases.length - failed, failed };

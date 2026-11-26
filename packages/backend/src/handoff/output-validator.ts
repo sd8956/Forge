@@ -3,7 +3,7 @@ import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { REPORT_STATUSES, type ReportStepInput, type StepKind } from "@forge/shared";
 import { z } from "zod";
 import type { PipelineStep } from "../pipeline/pipeline.js";
-import { evidenceManifest, SEVERITIES, STEP_CONTRACTS } from "./contracts.js";
+import { evidenceManifest, SEVERITIES, STEP_CONTRACTS, type EvidenceManifest } from "./contracts.js";
 import { parseFrontmatter } from "./frontmatter.js";
 
 export const commonFrontmatter = z.object({
@@ -192,6 +192,22 @@ function checkExitCriteria(ctx: ReportContext, extras: Record<string, unknown>):
   return issues;
 }
 
+/** Every acceptance criterion and covered FR of the task has a met verdict that cites cases of the manifest. */
+function checkVerdicts(ctx: ReportContext, manifest: EvidenceManifest, cases: Map<string, unknown>): string[] {
+  const spec = existsSync(ctx.taskSpecPath) ? readFileSync(ctx.taskSpecPath, "utf8") : "";
+  const covers = /^\s*-\s*Covers:\s*(.+)$/im.exec(spec)?.[1] ?? "";
+  const expected = [...ids(spec, /\bAC-\d+\b/g), ...ids(covers, /\bFR-\d+\b/g)];
+  const given = [...manifest.criteria, ...manifest.requirements];
+  const issues: string[] = [];
+  for (const v of given) {
+    if (v.verdict === "unmet") issues.push(`${v.id} is unmet; report failed when a criterion is not met`);
+    for (const tc of v.cases) if (!cases.has(tc)) issues.push(`${v.id} cites ${tc}, which is not in the manifest`);
+  }
+  const seen = new Set(given.map((v) => v.id));
+  for (const id of expected) if (!seen.has(id)) issues.push(`evidence/manifest.json has no verdict for ${id}`);
+  return issues;
+}
+
 function checkEvidence(ctx: ReportContext, extras: Record<string, unknown>): string[] {
   const file = join(ctx.outputDir, "evidence", "manifest.json");
   if (!existsSync(file)) return [];
@@ -215,6 +231,7 @@ function checkEvidence(ctx: ReportContext, extras: Record<string, unknown>): str
       if (!existsSync(resolve(dirname(file), f))) issues.push(`${c.id} evidence file ${f} does not exist`);
     }
   }
+  issues.push(...checkVerdicts(ctx, manifest, byId));
   const tests = extras.tests as { total?: number; failed?: number } | undefined;
   if (tests && tests.total !== manifest.cases.length) issues.push(`frontmatter tests.total is ${tests.total}, manifest has ${manifest.cases.length} cases`);
   return issues;

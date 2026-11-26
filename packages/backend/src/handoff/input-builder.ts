@@ -45,7 +45,10 @@ function exitCriteria(exit: PipelineStep["exit"], outputDir: string): string[] {
   if (exit.every_ac_has_tc) lines.push("Every `AC-n` of the task appears in `test-plan.md`, which has `TC-xx` cases");
   if (exit.command) lines.push(`\`${exit.command}\` exits 0 in the worktree (the backend runs it when you report \`done\`)`);
   if (exit.max_severity) lines.push(`No confirmed finding above \`${exit.max_severity}\``);
-  if (exit.all_cases_pass) lines.push("Every TC of the test plan is in `evidence/manifest.json`, passed, with evidence files");
+  if (exit.all_cases_pass) {
+    lines.push("Every TC of the test plan is in `evidence/manifest.json`, passed, with evidence files and the state they prove (`proves`)");
+    lines.push("`evidence/manifest.json` has a `met` verdict for every acceptance criterion and every FR the task covers, citing its cases");
+  }
   if (exit.pr_created) {
     lines.push("A pull request exists and its URL is in `pr_url`");
     lines.push("`pr.md` (the PR body) has the sections Why, What changed, Scope, Tradeoffs, Blast radius and Verification, in at most 40 lines");

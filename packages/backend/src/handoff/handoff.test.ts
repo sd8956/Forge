@@ -5,6 +5,7 @@ import type { ReportStepInput, StepKind } from "@forge/shared";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { stringify } from "yaml";
 import { parsePipeline, stepById } from "../pipeline/pipeline.js";
+import { evidenceManifest, storedEvidenceManifest } from "./contracts.js";
 import { parseFrontmatter } from "./frontmatter.js";
 import { outputDirFor, renderInput, type InputContext } from "./input-builder.js";
 import { commonFrontmatter, validateReport, type ReportContext } from "./output-validator.js";
@@ -61,6 +62,9 @@ function ctx(kind: StepKind, reported: Partial<ReportStepInput> & { artifacts: s
 const tdd = (redCommit = "abc1234", cases = ["TC-01"]) => [
   { cases, test: "test/todo.test.js: rejects an empty title", red: "node --test: 1 failing, expected 400 got 201", red_commit: redCommit, green: "node --test: 12 passing" },
 ];
+
+/** A met verdict for each acceptance criterion of the test task (AC-1, AC-2). */
+const verdicts = (...cases: string[]) => ["AC-1", "AC-2"].map((id) => ({ id, verdict: "met", cases }));
 
 describe("validateReport", () => {
   it("accepts a complete plan that covers every acceptance criterion", async () => {
@@ -166,7 +170,7 @@ describe("validateReport", () => {
   it("checks the evidence manifest against the test plan", async () => {
     write("plan-out/test-plan.md", "TC-01\nTC-02\n");
     const testPlanPath = join(worktree, "plan-out/test-plan.md");
-    const manifest = { task: "TASK-001", cases: [{ id: "TC-01", frs: ["FR-001"], result: "passed", files: ["tc-01.png"] }] };
+    const manifest = { task: "TASK-001", cases: [{ id: "TC-01", frs: ["FR-001"], result: "passed", proves: "the list shows the new todo", files: ["tc-01.png"] }], criteria: verdicts("TC-01") };
     const artifacts = output("e2e", { tests: { total: 1, passed: 1, failed: 0 } }, { "test-report.md": "r", "evidence/manifest.json": JSON.stringify(manifest) });
     const result = await validateReport(ctx("e2e", { artifacts }, { testPlanPath }));
     expect(result).toEqual({ ok: false, issues: ["evidence/manifest.json has no result for TC-02", "TC-01 evidence file tc-01.png does not exist"] });
@@ -175,8 +179,36 @@ describe("validateReport", () => {
     expect((await validateReport(ctx("e2e", { artifacts }, { testPlanPath }))).ok).toBe(true);
   });
 
+  it("needs a met verdict, backed by known cases, for every acceptance criterion and covered FR, and says what each case proves", async () => {
+    writeFileSync(join(worktree, ".factory", "backlog", "TASK-001.md"), "# TASK-001\n- Covers: FR-001, FR-002, NFR-01\n- AC-1 add\n- AC-2 list\n");
+    const files = { "test-report.md": "r", "evidence/a.png": "p" };
+    const check = (manifest: unknown) => validateReport(ctx("e2e", { artifacts: output("e2e", { tests: { total: 1, passed: 1, failed: 0 } }, { ...files, "evidence/manifest.json": JSON.stringify(manifest) }) }));
+    const kase = { id: "TC-01", result: "passed", proves: "the list shows the new todo first", files: ["a.png"] };
+
+    expect(await check({ task: "TASK-001", cases: [{ ...kase, proves: " " }], criteria: verdicts("TC-01"), requirements: [{ id: "FR-001", verdict: "met", cases: ["TC-01"] }, { id: "FR-002", verdict: "met", cases: ["TC-01"] }] })).toMatchObject({
+      ok: false,
+      issues: [expect.stringContaining("cases.0.proves")],
+    });
+    expect(await check({ task: "TASK-001", cases: [kase], criteria: [{ id: "AC-1", verdict: "unmet", cases: ["TC-09"] }], requirements: [{ id: "FR-001", verdict: "met", cases: ["TC-01"] }] })).toEqual({
+      ok: false,
+      issues: [
+        "AC-1 is unmet; report failed when a criterion is not met",
+        "AC-1 cites TC-09, which is not in the manifest",
+        "evidence/manifest.json has no verdict for AC-2",
+        "evidence/manifest.json has no verdict for FR-002",
+      ],
+    });
+    expect((await check({ task: "TASK-001", cases: [kase], criteria: verdicts("TC-01"), requirements: [{ id: "FR-001", verdict: "met", cases: ["TC-01"] }, { id: "FR-002", verdict: "met", cases: ["TC-01"] }] })).ok).toBe(true);
+  });
+
+  it("still reads manifests stored before cases said what they prove, for the panel", () => {
+    const old = { task: "TASK-001", cases: [{ id: "TC-01", frs: ["FR-001"], result: "passed", files: ["a.png"] }] };
+    expect(storedEvidenceManifest.parse(old).cases).toEqual([{ id: "TC-01", frs: ["FR-001"], result: "passed", files: ["a.png"] }]);
+    expect(evidenceManifest.safeParse(old).success).toBe(false);
+  });
+
   it("refuses an e2e done when a case failed", async () => {
-    const manifest = { task: "TASK-001", cases: [{ id: "TC-01", result: "failed", files: ["x.png"] }] };
+    const manifest = { task: "TASK-001", cases: [{ id: "TC-01", result: "failed", proves: "an error shows", files: ["x.png"] }], criteria: verdicts("TC-01") };
     const artifacts = output("e2e", { tests: { total: 1, passed: 0, failed: 1 } }, { "test-report.md": "r", "evidence/manifest.json": JSON.stringify(manifest), "evidence/x.png": "p" });
     expect(await validateReport(ctx("e2e", { artifacts }))).toEqual({ ok: false, issues: ["TC-01 is failed; report failed when a case does not pass"] });
   });
