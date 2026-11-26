@@ -157,6 +157,26 @@ describe("PR watcher and review loop with fake claude and fake gh", () => {
     expect(reviewed.prThreads[0]?.author).toBe("stranger");
   });
 
+  it("turns a conflict with the base branch into a review round that answers it", async () => {
+    const ctx = await setup();
+    const { id } = await ctx.api.startRun(ctx.project);
+    await ctx.api.waitForRun(id, "waiting_review");
+    ctx.gh.edit((s) => {
+      const pr = s.prs["7"] as unknown as Record<string, unknown>;
+      Object.assign(pr, { mergeable: "CONFLICTING", baseRefName: "main", baseRefOid: "def5678" });
+    });
+    const reviewed = await waitFor(async () => {
+      const run = await ctx.api.run(id);
+      return run.prThreads.some((t) => t.kind === "conflict" && t.handled) ? run : undefined;
+    }, "the conflict to be answered", 60_000);
+    expect(reviewed.prThreads.find((t) => t.kind === "conflict")).toMatchObject({ author: null, handled: true });
+    expect(reviewed.reviewRound).toBe(1);
+    // The fixer's input told it how to resolve the conflict.
+    const input = readFileSync(join(ctx.project, ".worktrees", "TASK-001", ".factory", "runs", "TASK-001", "review_fix", "1", "input.md"), "utf8");
+    expect(input).toContain("### `conflict:abc1234@def5678`");
+    expect(input).toContain("git merge origin/main");
+  }, 90_000);
+
   it("turns a failed check into a review round with its log", async () => {
     const ctx = await setup();
     const { id } = await ctx.api.startRun(ctx.project);

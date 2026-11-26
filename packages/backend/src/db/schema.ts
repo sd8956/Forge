@@ -108,7 +108,7 @@ export const prThreads = sqliteTable(
     runId: text("run_id").notNull(),
     /** `review_comment:<id>`, `issue_comment:<id>`, `review:<id>` or `check:<name>@<sha>`. */
     externalId: text("external_id").notNull(),
-    kind: text("kind", { enum: ["review_comment", "issue_comment", "review", "check"] }).notNull(),
+    kind: text("kind", { enum: ["review_comment", "issue_comment", "review", "check", "conflict"] }).notNull(),
     author: text("author"),
     path: text("path"),
     line: integer("line"),

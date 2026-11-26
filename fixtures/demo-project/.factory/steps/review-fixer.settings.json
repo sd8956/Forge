@@ -19,7 +19,9 @@
       "Bash(git rev-parse:*)",
       "Bash(gh pr view:*)",
       "Bash(gh api -X POST repos/*/pulls/*/comments/*/replies -F body=@*)",
-      "Bash(gh api -X POST repos/*/issues/*/comments -F body=@*)"
+      "Bash(gh api -X POST repos/*/issues/*/comments -F body=@*)",
+      "Bash(git fetch origin *)",
+      "Bash(git merge origin/*)"
     ],
     "deny": [
       "Bash(git push --force:*)",

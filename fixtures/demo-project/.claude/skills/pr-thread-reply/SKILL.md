@@ -6,7 +6,8 @@ description: How the Forge review_fix step answers pull request threads. Decide 
 # Reply to pull request threads
 
 `input.md` lists every thread under "Threads to answer", each with an id such as `review_comment:123`,
-`issue_comment:45`, `review:67` or `check:<name>@<sha>`, plus the repository slug and PR number.
+`issue_comment:45`, `review:67`, `check:<name>@<sha>` or `conflict:<head>@<base>`, plus the repository slug and PR
+number.
 
 ## 1. Decide
 
@@ -33,6 +34,10 @@ it with a literal command:
 - Conversation comment or review (`issue_comment:<id>`, `review:<id>`):
   `gh api -X POST repos/<slug>/issues/<pr>/comments -F body=@<out>/reply-<n>.md`
 - Failed check: no GitHub reply; describe the fix in `replies.md`.
+- Conflict with the base branch (`conflict:<head>@<base>`): follow the thread's steps (`git fetch origin <base>`,
+  `git merge origin/<base>`), resolve every conflicted file keeping both this task's change and what the base added,
+  commit the merge and run `make check`. Never rebase or force push. Post a conversation comment
+  (`issues/<pr>/comments`) listing the files that conflicted and how you resolved each; the action is `fixed`.
 
 ## 3. Write `replies.md` and the frontmatter
 

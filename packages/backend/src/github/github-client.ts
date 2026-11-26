@@ -18,6 +18,9 @@ export class GitHubError extends Error {}
 const prView = z.object({
   state: z.enum(["OPEN", "MERGED", "CLOSED"]),
   headRefOid: z.string(),
+  mergeable: z.enum(["MERGEABLE", "CONFLICTING", "UNKNOWN"]).optional(),
+  baseRefName: z.string().optional(),
+  baseRefOid: z.string().optional(),
   statusCheckRollup: z
     .array(
       z.looseObject({
@@ -51,7 +54,7 @@ export class GhCliClient implements GitHubClient {
   constructor(private readonly ghBin = "gh") {}
 
   async snapshot(slug: string, prNumber: number): Promise<PrSnapshot> {
-    const view = prView.parse(JSON.parse(await this.gh(["pr", "view", String(prNumber), "--repo", slug, "--json", "state,headRefOid,statusCheckRollup"])));
+    const view = prView.parse(JSON.parse(await this.gh(["pr", "view", String(prNumber), "--repo", slug, "--json", "state,headRefOid,statusCheckRollup,mergeable,baseRefName,baseRefOid"])));
     const pull = `repos/${slug}/pulls/${prNumber}`;
     const [reviewComments, issueComments, reviews] = await Promise.all([
       this.gh(["api", `${pull}/comments`, "--paginate", "--jq", ".[] | {id, login: .user.login, body, path, line: (.line // .original_line), url: .html_url}"]),
@@ -69,6 +72,9 @@ export class GhCliClient implements GitHubClient {
       reviewComments: lines(reviewComments, reviewComment).map((c) => ({ ...c, body: c.body ?? "" })),
       issueComments: lines(issueComments, comment).map((c) => ({ ...c, body: c.body ?? "" })),
       reviews: lines(reviews, review).map((c) => ({ ...c, body: c.body ?? "" })),
+      mergeable: view.mergeable,
+      baseRef: view.baseRefName,
+      baseSha: view.baseRefOid,
     };
   }
 

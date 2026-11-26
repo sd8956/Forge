@@ -42,3 +42,11 @@ project.yaml has no list, ignored every comment. Now everyone with write access 
 code anyway, so their comments add no new risk), looked up with `gh api repos/<slug>/collaborators` on each poll, plus
 the extra logins in `review.allowed_authors`; `"*"` accepts every commenter. Bots and strangers stay out by default:
 each comment becomes input to an agent that writes code and, in auto mode, runs commands.
+
+## Amendment (2026-11-25): conflicts with the base branch
+
+The watcher also reads GitHub's `mergeable`. `CONFLICTING` becomes a `conflict:<head>@<base>` thread, like a failed
+check, so it starts a review round: `review_fix` fetches and merges `origin/<base>`, resolves the conflicts keeping both
+sides, commits the merge, runs `make check` and explains the resolution in a PR comment; security, e2e and pr verify
+again and pr pushes the merge commit (never a rebase or a force push). `UNKNOWN` (GitHub still computing) waits for the
+next poll. A new head or base commit that conflicts again is a new thread, bounded by `review.max_rounds`.

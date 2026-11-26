@@ -8,11 +8,15 @@ export interface PrSnapshot {
   reviewComments: { id: number; login: string; body: string; path: string | null; line: number | null; url: string }[];
   issueComments: { id: number; login: string; body: string; url: string }[];
   reviews: { id: number; login: string; body: string; state: string; url: string }[];
+  /** GitHub's answer to "can this merge into its base": UNKNOWN while it is still computing. */
+  mergeable?: "MERGEABLE" | "CONFLICTING" | "UNKNOWN" | undefined;
+  baseRef?: string | undefined;
+  baseSha?: string | undefined;
 }
 
 export interface NewThread {
   externalId: string;
-  kind: "review_comment" | "issue_comment" | "review" | "check";
+  kind: "review_comment" | "issue_comment" | "review" | "check" | "conflict";
   author: string | null;
   path: string | null;
   line: number | null;
@@ -65,6 +69,23 @@ export function diffSnapshot(snapshot: PrSnapshot, opts: { known: Set<string>; a
         url: check.url,
       });
     }
+  }
+  // A conflict with the base branch needs the same review round as a failed check. One thread per head and base
+  // commit: the fix (a merge commit) changes the head, and a later base change that conflicts again is a new thread.
+  if (snapshot.mergeable === "CONFLICTING") {
+    const baseRef = snapshot.baseRef ?? "the base branch";
+    add({
+      externalId: `conflict:${snapshot.headSha}@${snapshot.baseSha ?? "unknown"}`,
+      kind: "conflict",
+      author: null,
+      path: null,
+      line: null,
+      body:
+        `The pull request conflicts with ${baseRef} (${snapshot.baseSha ?? "?"}). Run \`git fetch origin ${baseRef}\` and ` +
+        `\`git merge origin/${baseRef}\`, resolve every conflict keeping both this task's change and what ${baseRef} added, ` +
+        "commit the merge, and run `make check`. Do not rebase or force push: the pr step pushes the merge commit.",
+      url: null,
+    });
   }
   return { merged: false, closed: false, threads };
 }

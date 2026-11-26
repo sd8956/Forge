@@ -75,6 +75,20 @@ describe("diffSnapshot", () => {
     expect(diffSnapshot({ ...failing, checks: [{ ...failing.checks[0]!, status: "IN_PROGRESS", conclusion: "" }] }, opts).threads).toEqual([]);
   });
 
+  it("turns a conflict with the base branch into one thread per head and base commit, and waits while GitHub computes it", () => {
+    const conflicting: PrSnapshot = { ...base, mergeable: "CONFLICTING", baseRef: "main", baseSha: "def5678" };
+    const first = diffSnapshot(conflicting, opts);
+    expect(first.threads).toEqual([
+      expect.objectContaining({ externalId: "conflict:abc1234@def5678", kind: "conflict", author: null, url: null, body: expect.stringContaining("conflicts with main") as string }),
+    ]);
+    expect(first.threads[0]?.body).toContain("git merge origin/main");
+    expect(diffSnapshot(conflicting, { ...opts, known: new Set(["conflict:abc1234@def5678"]) }).threads).toEqual([]);
+    // main moved again: a new conflict is a new thread.
+    expect(diffSnapshot({ ...conflicting, baseSha: "9999999" }, { ...opts, known: new Set(["conflict:abc1234@def5678"]) }).threads).toHaveLength(1);
+    expect(diffSnapshot({ ...conflicting, mergeable: "UNKNOWN" }, opts).threads).toEqual([]);
+    expect(diffSnapshot({ ...conflicting, mergeable: "MERGEABLE" }, opts).threads).toEqual([]);
+  });
+
   it("reports merge and close, and opens no threads on a closed PR", () => {
     expect(diffSnapshot({ ...base, state: "MERGED", issueComments: [{ id: 1, login: "sd8956", body: "x", url: "u" }] }, opts)).toEqual({ merged: true, closed: false, threads: [] });
     expect(diffSnapshot({ ...base, state: "CLOSED" }, opts)).toEqual({ merged: false, closed: true, threads: [] });
