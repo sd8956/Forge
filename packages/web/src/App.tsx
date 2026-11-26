@@ -6,6 +6,7 @@ import { MemoryPage } from "./pages/Memory.js";
 import { SettingsPage } from "./pages/Settings.js";
 import { Icon } from "./components/Icon.js";
 import { UsageWidget } from "./components/UsageWidget.js";
+import { ProjectPicker } from "./components/ProjectPicker.js";
 import { Board } from "./pages/Board.js";
 import { RunDetail } from "./pages/RunDetail.js";
 import { useEvents } from "./useEvents.js";
@@ -125,22 +126,18 @@ export function App() {
     <div className="shell">
       <aside className="sidebar">
         <div className="logo"><img src="/favicon.svg" alt="" /> forge</div>
-        <label className="project-select">
-          <span className="muted small">Project</span>
-          <select
-            value={project?.id ?? ""}
-            onChange={(e) => {
-              setProjectId(e.target.value);
-              try {
-                localStorage.setItem(PROJECT_KEY, e.target.value);
-              } catch {
-                // Private mode: the choice just isn't remembered.
-              }
-            }}
-          >
-            {projects?.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-          </select>
-        </label>
+        <ProjectPicker
+          projects={projects ?? []}
+          value={project?.id ?? null}
+          onChange={(id) => {
+            setProjectId(id);
+            try {
+              localStorage.setItem(PROJECT_KEY, id);
+            } catch {
+              // Private mode: the choice just isn't remembered.
+            }
+          }}
+        />
         <nav className="nav" aria-label="Main">
           <a href="#/" className={onDefinition || onMemory || onSettings ? "" : "active"}><Icon name="board" /> Execution</a>
           <a href="#/definition" className={onDefinition ? "active" : ""}><Icon name="pencil" /> Definition</a>
