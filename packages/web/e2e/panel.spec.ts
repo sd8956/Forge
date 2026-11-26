@@ -162,7 +162,7 @@ test("approves a proposed plan in the panel, shows why it waits, and pauses and 
   await page.getByRole("button", { name: "Resume queue" }).click();
   await expect(page.getByRole("region", { name: "Plan + test plan" }).getByTestId("run-card-TASK-003")).toBeVisible({ timeout: 20_000 });
   await expect(queued.getByText("Nothing queued.")).toBeVisible();
-  await expect(page.getByTestId("active-sessions")).toHaveText("1 of 3");
+  await expect(page.getByTestId("active-sessions")).toHaveText("1");
 });
 
 test("shows the usage window the status line reports", async ({ page }) => {
@@ -327,6 +327,14 @@ test("changes Forge's limits and authentication in Settings, and shows the proje
   await expect(projectSettings.getByTestId("template-status")).toHaveText("Up to date");
   await page.screenshot({ path: join(shots, "settings.png"), fullPage: true });
 
-  await page.getByRole("link", { name: "Execution" }).click();
-  await expect(page.getByTestId("active-sessions")).toContainText("of 2");
+  // The project buttons run the commands set here (a harmless program in the e2e).
+  const apps = page.getByRole("region", { name: "Apps" });
+  await apps.getByLabel("Editor command").fill("/usr/bin/true");
+  await apps.getByLabel("File manager command").fill("/usr/bin/true");
+  await apps.getByRole("button", { name: "Save" }).click();
+  await expect(apps.getByRole("status")).toHaveText("Saved.");
+  await page.getByRole("button", { name: "Open in editor" }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Opened in the editor." })).toBeVisible();
+  await page.getByRole("button", { name: "Open folder" }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Opened the folder." })).toBeVisible();
 });

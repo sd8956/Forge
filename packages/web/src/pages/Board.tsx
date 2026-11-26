@@ -120,7 +120,7 @@ export function Board({ project, runs, backlog, now, onChanged, queue = null, pl
       ) : null}
 
       <div className="stats">
-        <div className="card stat"><div className="muted small">Active sessions</div><div className="value" data-testid="active-sessions">{queue ? `${sessions} of ${queue.maxConcurrency}` : active}</div></div>
+        <div className="card stat"><div className="muted small">Active sessions</div><div className="value" data-testid="active-sessions">{queue ? sessions : active}</div></div>
         <div className="card stat"><div className="muted small">Queued</div><div className="value">{queuedTasks.length}</div></div>
         <div className={`card stat${attention ? " attention" : ""}`}><div className="small">Need attention</div><div className="value">{attention}</div></div>
         <div className="card stat"><div className="muted small">Open PRs</div><div className="value">{openPrs}</div></div>

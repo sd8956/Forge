@@ -78,7 +78,9 @@ export const api = {
     return request<MemoryList>(`/projects/${projectId}/memories${params.size ? `?${params.toString()}` : ""}`);
   },
   settings: () => request<ForgeSettings>("/settings"),
-  updateSettings: (patch: Partial<Pick<ForgeSettings, "maxConcurrency" | "usagePausePercent" | "auth">>) =>
+  openProject: (projectId: string, target: "editor" | "files") =>
+    request<{ opened: string }>(`/projects/${projectId}/open`, { method: "POST", body: JSON.stringify({ target }) }),
+  updateSettings: (patch: Partial<Pick<ForgeSettings, "maxConcurrency" | "usagePausePercent" | "auth" | "editorCommand" | "fileManagerCommand">>) =>
     request<ForgeSettings>("/settings", { method: "PATCH", body: JSON.stringify(patch) }),
   saveApiKey: (key: string) => request<ForgeSettings>("/settings/api-key", { method: "PUT", body: JSON.stringify({ key }) }),
   removeApiKey: () => request<ForgeSettings>("/settings/api-key", { method: "DELETE" }),
@@ -132,6 +134,8 @@ export interface ForgeSettings {
   usagePausePercent: number;
   auth: "subscription" | "api_key";
   apiKey: { configured: boolean; last4: string | null };
+  editorCommand: string;
+  fileManagerCommand: string;
 }
 
 export interface ProjectSettings {

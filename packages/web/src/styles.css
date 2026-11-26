@@ -275,3 +275,8 @@ input.field { height: var(--control-height); }
 .lightbox-nav { position: sticky; top: 50%; z-index: 1; flex: none; width: 40px; height: 40px; margin: 0 6px; border-radius: 50%; border: 1px solid var(--border); background: var(--surface); color: var(--text); font-size: 24px; line-height: 1; cursor: pointer; }
 .lightbox-nav:disabled { opacity: 0.3; cursor: default; }
 .lightbox-hint { margin: 0; text-align: center; }
+
+/* Project buttons under the picker. */
+.project-actions .actions { gap: 6px; }
+.small-btn { height: 30px; padding: 0 10px; font-size: 12px; flex: 1; justify-content: center; white-space: nowrap; }
+.project-actions p { margin: 6px 0 0; }

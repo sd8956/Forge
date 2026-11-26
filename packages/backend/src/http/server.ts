@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import type { Duplex } from "node:stream";
 import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
@@ -167,6 +167,31 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
       return settingsRefused(reply, error);
     }
   });
+  /**
+   * Opens the project in the person's editor or file manager. The program comes from Settings (a name or a path,
+   * never a shell line) and its only argument is the project path from the database, never request input.
+   */
+  app.post("/projects/:projectId/open", async (request, reply) => {
+    const params = z.object({ projectId: z.uuid() }).safeParse(request.params);
+    const body = z.object({ target: z.enum(["editor", "files"]) }).safeParse(request.body ?? {});
+    if (!params.success) return badRequest(reply, params.error);
+    if (!body.success) return badRequest(reply, body.error);
+    const project = deps.projects.get(params.data.projectId);
+    if (!project) return reply.code(404).send({ error: "unknown_project" });
+    const settings = deps.settings.get();
+    const program = body.data.target === "editor" ? settings.editorCommand : settings.fileManagerCommand;
+    const started = await new Promise<string | null>((done) => {
+      const child = spawn(program, [project.repoPath], { detached: true, stdio: "ignore" });
+      child.once("spawn", () => {
+        child.unref();
+        done(null);
+      });
+      child.once("error", (error) => done(error.message));
+    });
+    if (started) return reply.code(500).send({ error: "open_failed", message: `Could not start ${program}: ${started}. Set the command in Settings.` });
+    return { opened: body.data.target };
+  });
+
   /** Forge-file updates for a project: the last check, and a check now ("Check now" in Settings). */
   app.get("/projects/:projectId/template", (request, reply) => {
     const params = z.object({ projectId: z.uuid() }).safeParse(request.params);

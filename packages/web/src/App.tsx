@@ -7,6 +7,7 @@ import { SettingsPage } from "./pages/Settings.js";
 import { Icon } from "./components/Icon.js";
 import { UsageWidget } from "./components/UsageWidget.js";
 import { ProjectPicker } from "./components/ProjectPicker.js";
+import { ProjectActions } from "./components/ProjectActions.js";
 import { Board } from "./pages/Board.js";
 import { RunDetail } from "./pages/RunDetail.js";
 import { useEvents } from "./useEvents.js";
@@ -138,6 +139,7 @@ export function App() {
             }
           }}
         />
+        {project ? <ProjectActions project={project} /> : null}
         <nav className="nav" aria-label="Main">
           <a href="#/" className={onDefinition || onMemory || onSettings ? "" : "active"}><Icon name="board" /> Execution</a>
           <a href="#/definition" className={onDefinition ? "active" : ""}><Icon name="pencil" /> Definition</a>
