@@ -47,10 +47,32 @@ function intake(files: FactoryFiles): StageValidation {
   return result(issues, parsed.success ? `${parsed.data.name} · ${parsed.data.platforms.join(", ") || "no platform"}` : "");
 }
 
+/** Text compared word for word: markdown quote markers, curly quotes and runs of whitespace do not count. */
+const normalized = (text: string) =>
+  text
+    .replace(/^\s*>\s?/gm, "")
+    .replace(/[\u201C\u201D]/g, '"')
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/\s+/g, " ")
+    .trim();
+
+/** An FR's `Source:` line: a verbatim quote of the intake, or an assumption with its reason. */
+function sourceIssue(id: string, section: string, intakeText: string): { issue?: string; assumption?: boolean } {
+  const source = /^Source:\s*(.*)$/m.exec(section)?.[1]?.trim();
+  if (!source) return { issue: `${id} has no source (add \`Source: intake "<exact words from intake.md>"\` or \`Source: assumption: <why>\`)` };
+  const assumption = /^assumption:?\s*(.*)$/i.exec(source);
+  if (assumption) return assumption[1]?.trim() ? { assumption: true } : { issue: `${id} marks an assumption without saying why` };
+  const quote = /^intake:?\s*["\u201C](.+)["\u201D]$/i.exec(source)?.[1];
+  if (!quote) return { issue: `${id} has a source that is neither \`intake "<quote>"\` nor \`assumption: <why>\`: ${source}` };
+  return normalized(intakeText).includes(normalized(quote)) ? {} : { issue: `${id} quotes text that is not in intake.md: "${quote}"` };
+}
+
 function requirements(files: FactoryFiles): StageValidation {
   const text = files[".factory/requirements.md"];
   if (text === undefined) return result([missing(".factory/requirements.md")], "");
+  const intakeText = files[".factory/intake.md"] ?? "";
   const issues: string[] = [];
+  let assumptions = 0;
   const sections = text.split(/^(?=#{1,4}\s)/m);
   const seen = new Set<string>();
   let frs = 0;
@@ -60,6 +82,9 @@ function requirements(files: FactoryFiles): StageValidation {
     frs++;
     if (seen.has(id)) issues.push(`${id} appears more than once`);
     seen.add(id);
+    const source = sourceIssue(id, section, intakeText);
+    if (source.issue) issues.push(source.issue);
+    if (source.assumption) assumptions++;
     const criteria = bullets(section);
     if (criteria.length === 0) issues.push(`${id} has no acceptance criteria`);
     for (const c of criteria) {
@@ -76,7 +101,7 @@ function requirements(files: FactoryFiles): StageValidation {
   }
   if (frs === 0) issues.push("requirements.md has no functional requirements (### FR-001 ...)");
   if (nfrs.length === 0) issues.push("requirements.md has no non-functional requirements (- NFR-01 ...)");
-  return result(issues, `${frs} FR · ${nfrs.length} NFR`);
+  return result(issues, `${frs} FR · ${nfrs.length} NFR${assumptions ? ` · ${plural(assumptions, "assumption")}` : ""}`);
 }
 
 function architecture(files: FactoryFiles): StageValidation {

@@ -16,7 +16,7 @@ export const STAGE_CONTRACTS: Readonly<Record<DefinitionStage, StageContract>> =
     goal: "Understand the idea and its constraints. Ask the person short questions in this session when something essential is missing (platforms, stack, limits); otherwise write it down.",
     reads: [],
     writes: [
-      { path: ".factory/intake.md", description: "The idea in plain language, who uses it, platforms (web, mobile, CLI), preferred stack, constraints (budget, infrastructure) and what is out of scope." },
+      { path: ".factory/intake.md", description: "The idea in plain language, who uses it, platforms (web, mobile, CLI), preferred stack, constraints (budget, infrastructure) and what is out of scope, with the person's own words quoted (`> ...`) for each need so requirements can trace back to them." },
       { path: ".factory/project.yaml", description: "`name` (kebab-case) and `platforms` (list). Leave `commands` for the architecture stage." },
     ],
   },
@@ -28,7 +28,7 @@ export const STAGE_CONTRACTS: Readonly<Record<DefinitionStage, StageContract>> =
       {
         path: ".factory/requirements.md",
         description:
-          "`### FR-001 <title>` headings, each with bullet criteria written as Given/When/Then and the exact texts the user sees; then a `## Non-functional requirements` list of `- NFR-01 <area>: <measurable rule>` (a number such as a p95 latency, or a rule such as \"every control has a visible label\").",
+          "`### FR-001 <title>` headings, each with a `Source:` line (`Source: intake \"<exact words from intake.md>\"`, or `Source: assumption: <why>` when the intake does not say it) and bullet criteria written as Given/When/Then with the exact texts the user sees; then a `## Non-functional requirements` list of `- NFR-01 <area>: <measurable rule>` (a number such as a p95 latency, or a rule such as \"every control has a visible label\").",
       },
     ],
   },

@@ -5,10 +5,14 @@ const requirements = `# Requirements
 
 ### FR-001 Shorten a link
 
+Source: intake "paste a long link and get a short one"
+
 - Given a valid URL, when I press "Shorten", then I see a short link.
 - Given an invalid URL, when I press "Shorten", then the page shows \`Enter a valid URL\`.
 
 ### FR-002 Open a short link
+
+Source: intake "the short link   opens the original page"
 
 - Given a short link, when I open it, then I am redirected to the original URL.
 
@@ -22,7 +26,7 @@ const threat = "# Threat model\n\n## Component: API\n\n| Threat | STRIDE | Mitig
 const task = (id: string, covers: string, deps = "none", acs = "- AC-1 (FR-001) Given x, when y, then z.") => `# ${id} — Something\n\n- Covers: ${covers}\n- Size: S\n- Depends on: ${deps}\n\n## Acceptance criteria\n\n${acs}\n`;
 
 const base: FactoryFiles = {
-  ".factory/intake.md": "# Intake\n\nA link shortener for a small team.",
+  ".factory/intake.md": "# Intake\n\nA link shortener for a small team.\n\n> I want to paste a long link and get a short one, and the short link\n> opens the original page.\n",
   ".factory/project.yaml": projectYaml,
   ".factory/requirements.md": requirements,
   ".factory/architecture.md": "# Architecture\n\nNode server.",
@@ -64,6 +68,21 @@ describe("validateStage", () => {
       'NFR-01 is not measurable (add a number, such as a latency or a percentage, or a rule like "every ...")',
     ]);
     expect(issues("requirements", { ...base, ".factory/requirements.md": "# Requirements\n" })).toEqual(["requirements.md has no functional requirements (### FR-001 ...)", "requirements.md has no non-functional requirements (- NFR-01 ...)"]);
+  });
+
+  it("traces every FR to a verbatim quote of the intake, or marks it as an assumption", () => {
+    const traced = requirements
+      .replace('Source: intake "paste a long link and get a short one"\n\n', "")
+      .replace('Source: intake "the short link   opens the original page"', 'Source: intake "it opens the page fast"');
+    expect(issues("requirements", { ...base, ".factory/requirements.md": traced })).toEqual([
+      'FR-001 has no source (add `Source: intake "<exact words from intake.md>"` or `Source: assumption: <why>`)',
+      'FR-002 quotes text that is not in intake.md: "it opens the page fast"',
+    ]);
+    const assumed = requirements.replace('Source: intake "the short link   opens the original page"', "Source: assumption: redirects are implied by a link shortener");
+    expect(validateStage("requirements", { ...base, ".factory/requirements.md": assumed })).toEqual({ ok: true, summary: "2 FR · 2 NFR · 1 assumption" });
+    expect(issues("requirements", { ...base, ".factory/requirements.md": requirements.replace('Source: intake "the short link   opens the original page"', "Source: assumption:") })).toEqual([
+      "FR-002 marks an assumption without saying why",
+    ]);
   });
 
   it("needs an ADR, every STRIDE category and the commands the pipeline runs", () => {

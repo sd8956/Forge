@@ -1,6 +1,6 @@
 ---
 name: security-scan
-description: Forge security step procedure. Run Semgrep, gitleaks and osv-scanner on the task branch, then confirm or discard each finding against threat-model.md and the OWASP Top 10, and write security-report.md with severities. Critical or high confirmed findings mean failed.
+description: Forge security step procedure. Run Semgrep, gitleaks and osv-scanner on the task branch, confirm or discard each finding with a command you ran, mark whether the task introduced it, and write security-report.md. Only critical or high findings the task introduced mean failed.
 ---
 
 # Security scan
@@ -37,6 +37,19 @@ osv-scanner scan source --lockfile package-lock.json --format json --output-file
 3. Review the diff yourself against every row of `.factory/threat-model.md` and the OWASP Top 10 (XSS,
    injection, path traversal, missing input limits, secrets, unsafe defaults). Add findings the tools
    missed.
+4. **Prove it.** A finding is confirmed only with a command you ran and what it showed: the tool command
+   and rule id for a tool hit; for a finding of your own, a test, a request or a one-line script against
+   the real code that shows the problem. A finding you could not prove is listed as `unproven`: it is not
+   counted and does not block.
+5. **Origin.** Mark each confirmed finding `introduced` or `pre-existing`:
+   - Semgrep (`--baseline-commit`) and gitleaks (`<base-commit>..HEAD`) report only what this branch adds:
+     `introduced`.
+   - osv-scanner reads the whole lockfile. A vulnerable package is `introduced` only when this branch adds
+     it or changes its version (`git diff <base-commit>..HEAD -- package-lock.json`); otherwise it is
+     `pre-existing`.
+   - Your own findings are `introduced` when the vulnerable lines are in the diff, or when the diff newly
+     exposes existing vulnerable code (a new route to it, a removed check). Otherwise `pre-existing`.
+   Pre-existing findings are real but are not this task's to fix: list them for a follow-up.
 
 ## 3. Severity
 
@@ -51,18 +64,22 @@ committed secret, known exploitable CVE), medium (missing limit, DoS vector, wea
 
 Base: <sha> · Head: <sha> · Tools: semgrep <v>, gitleaks <v>, osv-scanner <v>
 
-| # | Source | File:line | Severity | Verdict | Reason |
-| --- | --- | --- | --- | --- | --- |
+| # | Source | File:line | Severity | Origin | Verdict | Proof (command → result) | Reason |
+| --- | --- | --- | --- | --- | --- | --- | --- |
 
 ## Threat model check
 One line per threat-model row: mitigated, not affected, or finding #n.
 
 ## For development (only when failed)
-Exactly what to change for each confirmed critical or high finding.
+Exactly what to change for each introduced critical or high finding, with the command that shows it.
+
+## Follow-ups
+Pre-existing findings, one line each, for a separate task.
 ```
 
 ## 5. Outcome
 
-- `findings` in the frontmatter counts **confirmed** findings by severity (always required).
-- Any confirmed critical or high: status `failed`. The backend refuses `done` in that case.
-- Otherwise `done`; medium and low are listed for the PR.
+- `findings` in the frontmatter counts **confirmed, introduced** findings by severity (always required).
+- `preexisting` counts confirmed pre-existing findings by severity.
+- Any introduced critical or high: status `failed`. The backend refuses `done` in that case.
+- Otherwise `done`; medium and low, and every pre-existing finding, are listed for the PR.

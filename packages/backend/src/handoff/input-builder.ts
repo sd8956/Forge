@@ -46,7 +46,13 @@ function exitCriteria(exit: PipelineStep["exit"], outputDir: string): string[] {
   if (exit.command) lines.push(`\`${exit.command}\` exits 0 in the worktree (the backend runs it when you report \`done\`)`);
   if (exit.max_severity) lines.push(`No confirmed finding above \`${exit.max_severity}\``);
   if (exit.all_cases_pass) lines.push("Every TC of the test plan is in `evidence/manifest.json`, passed, with evidence files");
-  if (exit.pr_created) lines.push("A pull request exists and its URL is in `pr_url`");
+  if (exit.pr_created) {
+    lines.push("A pull request exists and its URL is in `pr_url`");
+    lines.push("`pr.md` (the PR body) has the sections Why, What changed, Scope, Tradeoffs, Blast radius and Verification, in at most 40 lines");
+  }
+  if (exit.tdd_evidence) {
+    lines.push("Every unit or integration `TC-xx` of the test plan has a `tdd` entry, and each `red_commit` (the failing test) comes before the fix in `commits`");
+  }
   return lines;
 }
 
@@ -125,6 +131,14 @@ export function renderInput(ctx: InputContext): string {
         "",
         `- Its handoff: \`${ctx.failure.output}\``,
         ...ctx.failure.artifacts.map((a) => `- \`${a}\``),
+        ...(ctx.failure.failures >= 2
+          ? [
+              "",
+              "Question the premise: this check failed again after a fix. Before the next fix, write in `dev-notes.md` the",
+              "assumption your earlier fixes shared and run something that tests it. If it is wrong, change approach",
+              "instead of patching the same idea again.",
+            ]
+          : []),
       ].join("\n"),
     );
   }

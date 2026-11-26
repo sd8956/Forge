@@ -20,6 +20,8 @@ Push the task branch and open the PR with the `pr-report` skill, from the report
 
 - Never merge, never force-push, never change code.
 - Evidence files stay local in `.factory/runs/`; the PR carries a text summary of them.
+- The PR body is a brief: Why, What changed, Scope, Tradeoffs, Blast radius and Verification, in at most
+  40 lines. The backend refuses a longer body or a missing section.
 
 Common rules:
 

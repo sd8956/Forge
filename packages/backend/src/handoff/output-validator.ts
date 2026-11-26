@@ -89,11 +89,70 @@ export async function validateReport(ctx: ReportContext): Promise<ReportValidati
   if (done) issues.push(...checkExitCriteria(ctx, extras.success ? (extras.data) : {}));
   if (issues.length > 0) return { ok: false, issues };
 
+  if (done && ctx.exit.tdd_evidence) {
+    const order = await checkTestFirst(ctx, extras.success ? extras.data : {});
+    if (order.length > 0) return { ok: false, issues: order };
+  }
+
   if (done && ctx.exit.command) {
     const result = await ctx.runCommand(ctx.exit.command, ctx.worktreePath);
     if (!result.ok) return { ok: false, issues: [`\`${ctx.exit.command}\` failed; fix it before reporting done:\n${result.output}`] };
   }
   return { ok: true, frontmatter: parsed.data as Record<string, unknown> };
+}
+
+const PR_SECTIONS = ["Why", "What changed", "Scope", "Tradeoffs", "Blast radius", "Verification"];
+const PR_MAX_LINES = 40;
+
+/** The PR body (`pr.md`) is a brief a reviewer reads in a minute: six sections, at most 40 lines. */
+function checkPrBrief(ctx: ReportContext): string[] {
+  const file = join(ctx.outputDir, "pr.md");
+  if (!existsSync(file)) return [];
+  const body = readFileSync(file, "utf8").trimEnd();
+  const issues = PR_SECTIONS.filter((title) => !new RegExp(`^##\\s+${title}\\s*$`, "mi").test(body)).map((title) => `pr.md has no \`## ${title}\` section`);
+  const lines = body.split("\n").length;
+  if (lines > PR_MAX_LINES) issues.push(`pr.md has ${lines} lines; keep the PR body to ${PR_MAX_LINES} (link long tables instead)`);
+  return issues;
+}
+
+interface TddEntry {
+  cases: string[];
+  red_commit: string;
+}
+
+/** Test plan cases with their type (`- Type: unit`), from `### TC-xx` sections. */
+function caseTypes(plan: string): { id: string; type: string }[] {
+  return plan
+    .split(/^(?=#{2,4}\s+TC-\d+)/m)
+    .map((section) => ({ id: /^#{2,4}\s+(TC-\d+)/.exec(section)?.[1], type: /^\s*-\s*Type:\s*([\w-]+)/im.exec(section)?.[1]?.toLowerCase() ?? "" }))
+    .filter((c): c is { id: string; type: string } => Boolean(c.id));
+}
+
+/** Development: every unit or integration case has red/green evidence whose failing test is one of the commits. */
+function checkTddEvidence(ctx: ReportContext, extras: Record<string, unknown>): string[] {
+  const issues: string[] = [];
+  const tdd = (extras.tdd ?? []) as TddEntry[];
+  const commits = (extras.commits ?? []) as string[];
+  for (const red of new Set(tdd.map((t) => t.red_commit))) {
+    if (!commits.includes(red)) issues.push(`tdd: red_commit ${red} is not in commits`);
+  }
+  if (ctx.testPlanPath && existsSync(ctx.testPlanPath)) {
+    const covered = new Set(tdd.flatMap((t) => t.cases));
+    for (const c of caseTypes(readFileSync(ctx.testPlanPath, "utf8"))) {
+      if ((c.type === "unit" || c.type === "integration") && !covered.has(c.id)) issues.push(`tdd: ${c.id} (${c.type}) has no red/green evidence`);
+    }
+  }
+  return issues;
+}
+
+/** The commit that added each failing test is an earlier commit of the branch than its tip, so the fix came after it. */
+async function checkTestFirst(ctx: ReportContext, extras: Record<string, unknown>): Promise<string[]> {
+  const issues: string[] = [];
+  for (const red of new Set(((extras.tdd ?? []) as TddEntry[]).map((t) => t.red_commit))) {
+    const result = await ctx.runCommand(`git merge-base --is-ancestor ${red} HEAD && test "$(git rev-list --count ${red}..HEAD)" -gt 0`, ctx.worktreePath);
+    if (!result.ok) issues.push(`tdd: red_commit ${red} must be an earlier commit of this branch than the fix (commit the failing test first)`);
+  }
+  return issues;
 }
 
 function checkExitCriteria(ctx: ReportContext, extras: Record<string, unknown>): string[] {
@@ -122,6 +181,8 @@ function checkExitCriteria(ctx: ReportContext, extras: Record<string, unknown>):
   }
 
   if (ctx.exit.all_cases_pass) issues.push(...checkEvidence(ctx, extras));
+  if (ctx.exit.tdd_evidence) issues.push(...checkTddEvidence(ctx, extras));
+  if (ctx.exit.pr_created) issues.push(...checkPrBrief(ctx));
 
   if (ctx.exit.threads_answered) {
     const answered = new Set(((extras.threads ?? []) as { id: string }[]).map((t) => t.id));

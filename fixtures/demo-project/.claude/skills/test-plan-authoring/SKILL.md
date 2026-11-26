@@ -32,7 +32,10 @@ exists. Tests describe the behavior the user asked for, not an implementation.
 
 - Every `AC-n` of the task appears in the coverage table and in at least one case. The backend checks it.
 - Number cases `TC-01`, `TC-02`, ... in order. Never reuse a number.
-- Each case checks one behavior and names its exact expected text, taken from the requirements.
+- Each case checks one rule and names every observable effect of it, taken from the requirements: the
+  exact text, the status or exit code, and that rejected input leaves stored data unchanged.
+- `unit` and `integration` cases become tests written first in the development step; the backend checks
+  that each one has red/green evidence. Keep them small enough to fail for one reason.
 - Prefer `e2e` for anything a user does on the page (they become Playwright specs with evidence) and
   `unit` for validation rules and pure logic.
 - Include the negative path the criteria name (empty input, error message, no change to the list).

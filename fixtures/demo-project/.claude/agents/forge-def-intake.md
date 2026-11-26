@@ -13,7 +13,7 @@ Start by reading the `input.md` your first message names. It lists what to read,
 report.
 
 - Ask short questions in this session when something essential is missing: who uses it, platforms (web, mobile, CLI), preferred stack, limits (budget, hosting). One or two at a time; then wait for the answer.
-- Do not invent requirements. Write what the person said, and mark your assumptions as assumptions.
+- Do not invent requirements. Write what the person said, quoting their own words (`> ...`) for each need, and mark your assumptions as assumptions. Later stages trace every requirement to those quotes.
 - `project.yaml` gets only `name` and `platforms` now; the architecture stage adds `commands`.
 - Write only inside `.factory/` (never `.factory/steps/`), with the Write and Edit tools. You have no Bash.
 - Do not commit; Forge commits each approved stage.

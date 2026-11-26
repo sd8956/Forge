@@ -103,12 +103,12 @@ function testPlanPath() {
 /** Valid `.factory/` files for each definition stage, like a stage session would write them. */
 const DEFINITION_FILES = {
   def_intake: {
-    ".factory/intake.md": "# Intake\n\nA link shortener for a small team. Web only.\n",
+    ".factory/intake.md": "# Intake\n\nA link shortener for a small team. Web only.\n\n> Paste a long link and get a short one that opens the original page.\n",
     ".factory/project.yaml": "name: shortener\nplatforms: [web]\n",
   },
   def_requirements: {
     ".factory/requirements.md":
-      "# Requirements\n\n### FR-001 Shorten a link\n\n- Given a valid URL, when I press \"Shorten\", then I see a short link.\n\n### FR-002 Open a short link\n\n- Given a short link, when I open it, then I am redirected.\n\n## Non-functional requirements\n\n- NFR-01 Performance: redirects answer in under 50 ms (p95).\n",
+      "# Requirements\n\n### FR-001 Shorten a link\n\nSource: intake \"Paste a long link and get a short one\"\n\n- Given a valid URL, when I press \"Shorten\", then I see a short link.\n\n### FR-002 Open a short link\n\nSource: intake \"a short one that opens the original page\"\n\n- Given a short link, when I open it, then I am redirected.\n\n## Non-functional requirements\n\n- NFR-01 Performance: redirects answer in under 50 ms (p95).\n",
   },
   def_architecture: {
     ".factory/architecture.md": "# Architecture\n\nNode server in src/, page in public/.\n",
@@ -162,8 +162,17 @@ function produce(status) {
       break;
     case "development": {
       out("dev-notes.md", "# Dev notes\nFake change.\n");
-      execFileSync("git", ["-c", "user.name=fake", "-c", "user.email=fake@example.invalid", "commit", "-q", "--allow-empty", "-m", `feat: fake development attempt ${attempt}`]);
-      extras.commits = [execFileSync("git", ["rev-parse", "--short", "HEAD"], { encoding: "utf8" }).trim()];
+      // Test first: the failing test is committed before the fix, as the tdd evidence requires.
+      const commit = (message) => {
+        execFileSync("git", ["-c", "user.name=fake", "-c", "user.email=fake@example.invalid", "commit", "-q", "--allow-empty", "-m", message]);
+        return execFileSync("git", ["rev-parse", "--short", "HEAD"], { encoding: "utf8" }).trim();
+      };
+      const red = commit(`test: fake failing test attempt ${attempt}`);
+      const green = commit(`feat: fake development attempt ${attempt}`);
+      const plan = testPlanPath();
+      const tcs = plan && existsSync(plan) ? [...new Set(readFileSync(plan, "utf8").match(/\bTC-\d+\b/g) ?? [])] : [];
+      extras.commits = [red, green];
+      extras.tdd = [{ cases: tcs.length ? tcs : ["TC-01"], test: "test/fake.test.js", red: "fake test: 1 failing", red_commit: red, green: "fake test: 1 passing" }];
       break;
     }
     case "security":
@@ -184,7 +193,7 @@ function produce(status) {
       break;
     }
     case "pr":
-      out("pr.md", "## Summary\nFake PR.\n");
+      out("pr.md", ["Why", "What changed", "Scope", "Tradeoffs", "Blast radius", "Verification"].map((t) => `## ${t}\nFake.\n`).join("\n"));
       Object.assign(extras, { pr_url: "https://github.com/example/demo-project/pull/7", pr_number: 7 });
       break;
     case "review_fix": {
