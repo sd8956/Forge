@@ -51,7 +51,7 @@ function exitCriteria(exit: PipelineStep["exit"], outputDir: string): string[] {
     lines.push("`pr.md` (the PR body) has the sections Why, What changed, Scope, Tradeoffs, Blast radius and Verification, in at most 40 lines");
   }
   if (exit.tdd_evidence) {
-    lines.push("Every unit or integration `TC-xx` of the test plan has a `tdd` entry, and each `red_commit` (the failing test) comes before the fix in `commits`");
+    lines.push("Every unit or integration `TC-xx` of the test plan has a `tdd` entry; each `red_commit` (the failing test) is listed in `commits` and is an earlier commit of the branch than its tip");
   }
   return lines;
 }

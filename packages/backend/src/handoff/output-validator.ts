@@ -133,6 +133,7 @@ function checkTddEvidence(ctx: ReportContext, extras: Record<string, unknown>): 
   const issues: string[] = [];
   const tdd = (extras.tdd ?? []) as TddEntry[];
   const commits = (extras.commits ?? []) as string[];
+  if (tdd.length === 0) issues.push("tdd: list each test written first (cases, red, red_commit, green)");
   for (const red of new Set(tdd.map((t) => t.red_commit))) {
     if (!commits.includes(red)) issues.push(`tdd: red_commit ${red} is not in commits`);
   }
