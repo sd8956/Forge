@@ -88,7 +88,7 @@ describe("PR watcher and review loop with fake claude and fake gh", () => {
       return run.status === "waiting_review" && run.reviewRound === 1 ? run : undefined;
     }, "a review round to finish", 60_000);
 
-    expect(steps(reviewed).slice(-4)).toEqual(["review_fix#1:done", "security#2:done", "e2e#2:done", "pr#2:done"]);
+    expect(steps(reviewed).slice(-5)).toEqual(["review_fix#1:done", "security#2:done", "e2e#2:done", "code_review#2:done", "pr#2:done"]);
     expect(reviewed).toMatchObject({ mode: "review", reviewRound: 1 });
     expect(reviewed.prThreads).toEqual([expect.objectContaining({ id: "review_comment:11", author: "sd8956", handled: true })]);
     const fixInput = readFileSync(reviewed.steps.find((s) => s.kind === "review_fix")?.inputPath ?? "", "utf8");

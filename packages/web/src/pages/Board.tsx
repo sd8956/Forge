@@ -7,7 +7,7 @@ import { Paged } from "../components/Pager.js";
 import { PlanCard } from "../components/PlanCard.js";
 import { duration, runStatus, STEP_LABELS, stepStatus } from "../status.js";
 
-const STEP_COLUMNS = ["plan", "design", "development", "security", "e2e", "pr", "review"] as const;
+const STEP_COLUMNS = ["plan", "design", "development", "security", "e2e", "code_review", "pr", "review"] as const;
 const OPEN = new Set(["queued", "running", "needs_human"]);
 
 const LISTS = [

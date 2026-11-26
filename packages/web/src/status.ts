@@ -31,6 +31,7 @@ export const STEP_LABELS: Record<string, string> = {
   development: "Development",
   security: "Security",
   e2e: "E2E tests",
+  code_review: "Code review",
   pr: "Pull request",
   review_fix: "Review fix",
 };

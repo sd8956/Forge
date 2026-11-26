@@ -3,7 +3,8 @@ import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { REPORT_STATUSES, type ReportStepInput, type StepKind } from "@forge/shared";
 import { z } from "zod";
 import type { PipelineStep } from "../pipeline/pipeline.js";
-import { evidenceManifest, SEVERITIES, STEP_CONTRACTS, type EvidenceManifest } from "./contracts.js";
+import type { ReviewLens } from "../domain/review-depth.js";
+import { evidenceManifest, isBlockingSeverity, SEVERITIES, STEP_CONTRACTS, type EvidenceManifest, type ReviewFinding } from "./contracts.js";
 import { parseFrontmatter } from "./frontmatter.js";
 
 export const commonFrontmatter = z.object({
@@ -35,6 +36,8 @@ export interface ReportContext {
   testPlanPath?: string | undefined;
   /** PR threads the step was asked to answer (review_fix). */
   threadIds?: string[] | undefined;
+  /** Lenses the backend assigned from the task diff (code_review). */
+  lenses?: ReviewLens[] | undefined;
   runCommand: (command: string, cwd: string) => Promise<CommandResult>;
 }
 
@@ -115,6 +118,24 @@ function checkPrBrief(ctx: ReportContext): string[] {
   return issues;
 }
 
+/** code_review: exactly the assigned lenses were reviewed, and no introduced BLOCKER or CRITICAL finding stands. */
+function checkReviewClean(ctx: ReportContext, extras: Record<string, unknown>): string[] {
+  if (!ctx.lenses) return ["The backend could not assign the review lenses for this step; report blocked"];
+  const assigned = new Set<string>(ctx.lenses);
+  const reported = (extras.lenses ?? []) as ReviewLens[];
+  const issues: string[] = [];
+  if (reported.length !== assigned.size || !reported.every((l) => assigned.has(l))) {
+    issues.push(`lenses is [${reported.join(", ")}], but the backend assigned [${ctx.lenses.join(", ")}]; review exactly the assigned lenses`);
+  }
+  for (const f of (extras.findings ?? []) as ReviewFinding[]) {
+    if (!assigned.has(f.lens)) issues.push(`Finding ${f.id} is from lens ${f.lens}, which was not assigned`);
+    if (isBlockingSeverity(f.severity) && f.origin === "introduced" && f.refuter !== "refuted") {
+      issues.push(`Cannot report done with blocking finding ${f.id} (${f.severity} at ${f.location}); report failed with what development must change`);
+    }
+  }
+  return issues;
+}
+
 interface TddEntry {
   cases: string[];
   red_commit: string;
@@ -183,6 +204,7 @@ function checkExitCriteria(ctx: ReportContext, extras: Record<string, unknown>):
   if (ctx.exit.all_cases_pass) issues.push(...checkEvidence(ctx, extras));
   if (ctx.exit.tdd_evidence) issues.push(...checkTddEvidence(ctx, extras));
   if (ctx.exit.pr_created) issues.push(...checkPrBrief(ctx));
+  if (ctx.exit.review_clean) issues.push(...checkReviewClean(ctx, extras));
 
   if (ctx.exit.threads_answered) {
     const answered = new Set(((extras.threads ?? []) as { id: string }[]).map((t) => t.id));

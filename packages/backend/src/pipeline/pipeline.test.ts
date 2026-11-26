@@ -36,6 +36,17 @@ describe("parsePipeline", () => {
     expect(() => parsePipeline(`${VALID}review:\n  fix: { id: review_fix, agent: forge-review-fixer, model: sonnet, settings: s.json }\n  then: [e2e]\n`)).toThrow("not in the pipeline");
   });
 
+  it("accepts a code_review step that must be clean, after e2e and before pr", () => {
+    const pipeline = parsePipeline(`${VALID}  - { id: e2e, agent: forge-tester, model: sonnet, settings: s.json }
+  - { id: code_review, agent: forge-code-reviewer, model: opus, settings: steps/code-reviewer.settings.json,
+      exit: { requires: [code-review.md], review_clean: true }, on_fail: { goto: development, max_attempts: 3 } }
+  - { id: pr, agent: forge-pr, model: sonnet, settings: s.json }
+`);
+    expect(pipeline.steps.map((s) => s.id)).toEqual(["plan", "development", "security", "e2e", "code_review", "pr"]);
+    expect(pipeline.steps[4]?.exit).toMatchObject({ requires: ["code-review.md"], review_clean: true });
+    expect(pipeline.steps[0]?.exit.review_clean).toBe(false);
+  });
+
   it("picks the model by task size, falling back to the default", () => {
     const [plan, dev] = parsePipeline(VALID).steps;
     expect(modelFor(plan!, "L")).toBe("opus");

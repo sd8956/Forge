@@ -215,7 +215,7 @@ describe("validateReport", () => {
 });
 
 describe("validateReport for review_fix", () => {
-  const exit = { requires: ["replies.md"], every_ac_has_tc: false, all_cases_pass: false, pr_created: false, threads_answered: true, tdd_evidence: false };
+  const exit = { requires: ["replies.md"], every_ac_has_tc: false, all_cases_pass: false, pr_created: false, threads_answered: true, tdd_evidence: false, review_clean: false };
 
   it("lets review_fix escalate a thread to a person instead of deciding it alone", async () => {
     const threads = [
@@ -227,7 +227,7 @@ describe("validateReport for review_fix", () => {
   });
 
   it("keeps the PR body to a one-minute brief with its six sections", async () => {
-    const prExit = { requires: ["pr.md"], every_ac_has_tc: false, all_cases_pass: false, pr_created: true, threads_answered: false, tdd_evidence: false };
+    const prExit = { requires: ["pr.md"], every_ac_has_tc: false, all_cases_pass: false, pr_created: true, threads_answered: false, tdd_evidence: false, review_clean: false };
     const brief = "## Why\nx\n\n## What changed\nx\n\n## Scope\nx\n\n## Tradeoffs\nx\n\n## Blast radius\nx\n\n## Verification\nx\n";
     const pr = { pr_url: "https://github.com/o/r/pull/7", pr_number: 7 };
     const check = (body: string) => validateReport(ctx("pr", { artifacts: output("pr", pr, { "pr.md": body }) }, { exit: prExit }));
@@ -244,6 +244,63 @@ describe("validateReport for review_fix", () => {
     const result = await validateReport(ctx("review_fix", { artifacts }, { exit, threadIds: ["review_comment:1", "check:ci@abc"] }));
     expect(result).toEqual({ ok: false, issues: ["output.md does not answer check:ci@abc"] });
     expect((await validateReport(ctx("review_fix", { artifacts }, { exit, threadIds: ["review_comment:1"] }))).ok).toBe(true);
+  });
+});
+
+describe("validateReport for code_review", () => {
+  const exit = { requires: ["code-review.md"], every_ac_has_tc: false, all_cases_pass: false, pr_created: false, threads_answered: false, tdd_evidence: false, review_clean: true };
+  const finding = (overrides: Record<string, unknown> = {}) => ({
+    id: "F-1",
+    lens: "risk",
+    severity: "BLOCKER",
+    location: "src/server.js:42",
+    claim: "The title is written into the page without escaping.",
+    proof: "curl -d 'title=<script>' then GET / shows the raw <script> tag",
+    origin: "introduced",
+    refuter: "corroborated",
+    ...overrides,
+  });
+  const ALL = ["risk", "resilience", "readability", "reliability"];
+  const check = (fields: Record<string, unknown>, lenses: ReportContext["lenses"] = ALL as ReportContext["lenses"], status: "done" | "failed" = "done") =>
+    validateReport(ctx("code_review", { artifacts: output("code_review", { status, ...fields }, { "code-review.md": "review" }), status }, { exit, lenses }));
+
+  it("accepts a clean review of exactly the assigned lenses", async () => {
+    expect(await check({ lenses: ["reliability"], findings: [finding({ lens: "reliability", severity: "WARNING", refuter: "not_needed" })] }, ["reliability"])).toMatchObject({ ok: true });
+    expect(await check({ lenses: [], findings: [] }, [])).toMatchObject({ ok: true });
+  });
+
+  it("refuses lenses other than the ones the backend assigned", async () => {
+    expect(await check({ lenses: ["reliability"], findings: [] })).toEqual({
+      ok: false,
+      issues: ["lenses is [reliability], but the backend assigned [risk, resilience, readability, reliability]; review exactly the assigned lenses"],
+    });
+  });
+
+  it("refuses done while an introduced BLOCKER or CRITICAL finding stands", async () => {
+    expect(await check({ lenses: ALL, findings: [finding(), finding({ id: "F-2", severity: "CRITICAL", refuter: "inconclusive", location: "src/db.js:7" })] })).toEqual({
+      ok: false,
+      issues: [
+        "Cannot report done with blocking finding F-1 (BLOCKER at src/server.js:42); report failed with what development must change",
+        "Cannot report done with blocking finding F-2 (CRITICAL at src/db.js:7); report failed with what development must change",
+      ],
+    });
+    expect((await check({ lenses: ALL, findings: [finding()] }, ALL as ReportContext["lenses"], "failed")).ok).toBe(true);
+  });
+
+  it("lets done through when the refuter refuted the blocker or it was already on the base", async () => {
+    expect((await check({ lenses: ALL, findings: [finding({ refuter: "refuted" }), finding({ id: "F-2", origin: "pre-existing" })] })).ok).toBe(true);
+  });
+
+  it("refuses an introduced BLOCKER or CRITICAL finding that skipped the refuter", async () => {
+    const result = await check({ lenses: ALL, findings: [finding({ severity: "CRITICAL", refuter: "not_needed" })] }, ALL as ReportContext["lenses"], "failed");
+    expect(result).toEqual({ ok: false, issues: [expect.stringContaining("findings.0.refuter: BLOCKER and CRITICAL findings")] });
+  });
+
+  it("refuses a finding from a lens that was not assigned", async () => {
+    expect(await check({ lenses: ["reliability"], findings: [finding({ lens: "risk", severity: "WARNING", refuter: "not_needed" })] }, ["reliability"])).toEqual({
+      ok: false,
+      issues: ["Finding F-1 is from lens risk, which was not assigned"],
+    });
   });
 });
 
@@ -309,6 +366,20 @@ describe("renderInput", () => {
     const text = renderInput({ ...base, failure: { ...failure, failures: 2 } });
     expect(text).toContain("Question the premise");
     expect(text).toContain("dev-notes.md");
+  });
+
+  it("tells the code reviewer the depth the backend chose and what to do with no lens", () => {
+    const review = { ...base, kind: "code_review" as const, outputDir: outputDirFor("TASK-001", "code_review", 1), exit: { ...base.exit, review_clean: true } };
+    const high = renderInput({ ...review, lenses: { tier: "high", lenses: ["risk", "resilience", "readability", "reliability"], reasons: ["src/login.js: sensitive path (login)"] } });
+    expect(high).toContain("## Review depth");
+    expect(high).toContain("- Tier: `high`");
+    expect(high).toContain("- Lenses: `risk`, `resilience`, `readability`, `reliability`");
+    expect(high).toContain("  - src/login.js: sensitive path (login)");
+    expect(high).toContain("`lenses` in `output.md` are exactly the lenses of Review depth");
+    const passive = renderInput({ ...review, lenses: { tier: "passive", lenses: [], reasons: ["only documentation changed"] } });
+    expect(passive).toContain("- Lenses: none");
+    expect(passive).toContain("With no lens, write `output.md` with an empty ledger");
+    expect(renderInput(base)).not.toContain("## Review depth");
   });
 
   it("explains why the step runs again after a failure", () => {

@@ -37,13 +37,13 @@ function expectValidOutputs(run: RunDetail) {
 }
 
 describe("pipeline run with a fake claude", () => {
-  it("runs plan → design → development → security → e2e → pr and stops in waiting_review", async () => {
+  it("runs plan → design → development → security → e2e → code_review → pr and stops in waiting_review", async () => {
     const ctx = await setup();
     const started = await ctx.api.startRun(ctx.project);
     expect(started).toMatchObject({ status: "running", currentStep: "plan", branch: "feat/TASK-001", baseBranch: "main" });
 
     const run = await ctx.api.waitForRun(started.id, "waiting_review");
-    expect(sequence(run)).toEqual(["plan#1:done", "design#1:done", "development#1:done", "security#1:done", "e2e#1:done", "pr#1:done"]);
+    expect(sequence(run)).toEqual(["plan#1:done", "design#1:done", "development#1:done", "security#1:done", "e2e#1:done", "code_review#1:done", "pr#1:done"]);
     expect(run).toMatchObject({ prUrl: "https://github.com/example/demo-project/pull/7", prNumber: 7, attempts: {}, exitReason: "completed" });
     expectValidOutputs(run);
 
@@ -51,8 +51,12 @@ describe("pipeline run with a fake claude", () => {
     const input = (kind: string) => readFileSync(run.steps.find((s) => s.kind === kind)?.inputPath ?? "", "utf8");
     expect(input("design")).toContain(".factory/runs/TASK-001/plan/1/output.md");
     expect(input("pr")).toContain(".factory/runs/TASK-001/e2e/1/evidence/manifest.json");
+    // The fake's commits are empty, so the backend assigns no lens.
+    expect(input("code_review")).toContain("## Review depth");
+    expect(input("code_review")).toContain("- Tier: `passive`");
+    expect(input("pr")).toContain(".factory/runs/TASK-001/code_review/1/code-review.md");
     const models = readTrace(ctx.root).filter((t) => t.type === "started").map((t) => `${String(t.kind)}:${String(t.model)}`);
-    expect(models).toEqual(["plan:opus", "design:opus", "development:sonnet", "security:opus", "e2e:sonnet", "pr:sonnet"]);
+    expect(models).toEqual(["plan:opus", "design:opus", "development:sonnet", "security:opus", "e2e:sonnet", "code_review:opus", "pr:sonnet"]);
     expect(run.memories).toMatchObject({ available: true, items: [{ ref: "TASK-001/plan" }] });
     await waitFor(async () => (await ctx.tmux.listSessions()).length === 0, "all sessions to close");
   });
@@ -69,12 +73,24 @@ describe("pipeline run with a fake claude", () => {
       "development#2:done",
       "security#2:done",
       "e2e#2:done",
+      "code_review#1:done",
       "pr#1:done",
     ]);
     expect(run.attempts).toEqual({ e2e: 1 });
     const devRetry = readFileSync(run.steps[5]?.inputPath ?? "", "utf8");
     expect(devRetry).toContain("The `e2e` step failed (failure 1 of 3 allowed)");
     expect(devRetry).toContain("Fake e2e attempt 1: failed");
+    expectValidOutputs(run);
+  });
+
+  it("sends a code_review with a standing blocker back to development, which fixes it", async () => {
+    const ctx = await setup({ code_review: ["failed", "done"] });
+    const run = await ctx.api.waitForRun((await ctx.api.startRun(ctx.project)).id, "waiting_review");
+    expect(sequence(run).slice(3)).toEqual(["security#1:done", "e2e#1:done", "code_review#1:failed", "development#2:done", "security#2:done", "e2e#2:done", "code_review#2:done", "pr#1:done"]);
+    expect(run.attempts).toEqual({ code_review: 1 });
+    const devRetry = readFileSync(run.steps.find((s) => s.kind === "development" && s.attempt === 2)?.inputPath ?? "", "utf8");
+    expect(devRetry).toContain("The `code_review` step failed (failure 1 of 3 allowed)");
+    expect(devRetry).toContain(".factory/runs/TASK-001/code_review/1/code-review.md");
     expectValidOutputs(run);
   });
 
@@ -102,7 +118,7 @@ describe("pipeline run with a fake claude", () => {
     const resumed = await ctx.api.request("POST", `/runs/${id}/resume`, {});
     expect(resumed.status).toBe(200);
     const run = await ctx.api.waitForRun(id, "waiting_review");
-    expect(sequence(run).slice(-3)).toEqual(["security#4:done", "e2e#1:done", "pr#1:done"]);
+    expect(sequence(run).slice(-4)).toEqual(["security#4:done", "e2e#1:done", "code_review#1:done", "pr#1:done"]);
     expect(run.attempts).toEqual({ security: 0 });
   });
 

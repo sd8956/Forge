@@ -196,6 +196,18 @@ function produce(status) {
       extras.tests = { total: cases.length, passed: cases.length - failed, failed };
       break;
     }
+    case "code_review": {
+      // Review exactly the lenses the backend assigned in "Review depth"; a failed review leaves one standing blocker.
+      const line = /^- Lenses: (.+)$/m.exec(input)?.[1] ?? "none";
+      const lenses = [...line.matchAll(/`([a-z]+)`/g)].map((m) => m[1]);
+      const findings =
+        status === "failed"
+          ? [{ id: "F-1", lens: lenses[0] ?? "reliability", severity: "BLOCKER", location: "src/server.js:1", claim: "Fake blocker.", proof: "fake proof", origin: "introduced", refuter: "corroborated" }]
+          : [];
+      out("code-review.md", `# Code review\n\nLenses: ${lenses.join(", ") || "none"}\n${findings.map((f) => `| ${f.id} | ${f.severity} | ${f.claim} |`).join("\n")}\n`);
+      Object.assign(extras, { lenses, findings });
+      break;
+    }
     case "pr":
       out("pr.md", ["Why", "What changed", "Scope", "Tradeoffs", "Blast radius", "Verification"].map((t) => `## ${t}\nFake.\n`).join("\n"));
       Object.assign(extras, { pr_url: "https://github.com/example/demo-project/pull/7", pr_number: 7 });

@@ -1,5 +1,6 @@
 import type { StepKind } from "@forge/shared";
 import { z } from "zod";
+import { REVIEW_LENSES } from "../domain/review-depth.js";
 
 /**
  * What each step kind reads, writes and must declare in its `output.md`
@@ -20,6 +21,31 @@ export interface StepContract {
 
 const count = z.number().int().min(0);
 const sha = z.string().regex(/^[0-9a-f]{7,40}$/);
+
+export const REVIEW_SEVERITIES = ["BLOCKER", "CRITICAL", "WARNING", "SUGGESTION"] as const;
+
+/** One code_review finding. Introduced BLOCKER and CRITICAL findings always go through the refuter. */
+export const reviewFinding = z
+  .object({
+    id: z.string().trim().min(1),
+    lens: z.enum(REVIEW_LENSES),
+    severity: z.enum(REVIEW_SEVERITIES),
+    location: z.string().trim().min(1),
+    claim: z.string().trim().min(1),
+    /** A command the reviewer ran and what it showed, or file:line evidence for a deterministic defect. */
+    proof: z.string().trim().min(1),
+    origin: z.enum(["introduced", "pre-existing"]),
+    refuter: z.enum(["corroborated", "refuted", "inconclusive", "not_needed"]),
+  })
+  .refine((f) => !(isBlockingSeverity(f.severity) && f.origin === "introduced" && f.refuter === "not_needed"), {
+    path: ["refuter"],
+    message: "BLOCKER and CRITICAL findings the task introduced always go through the refuter; refuter cannot be not_needed",
+  });
+export type ReviewFinding = z.infer<typeof reviewFinding>;
+
+export function isBlockingSeverity(severity: (typeof REVIEW_SEVERITIES)[number]): boolean {
+  return severity === "BLOCKER" || severity === "CRITICAL";
+}
 
 export const STEP_CONTRACTS: Readonly<Record<StepKind, StepContract>> = {
   plan: {
@@ -77,6 +103,33 @@ export const STEP_CONTRACTS: Readonly<Record<StepKind, StepContract>> = {
     ],
     extras: z.object({ tests: z.object({ total: z.number().int().min(1), passed: count, failed: count }) }),
     extrasExample: { tests: { total: 4, passed: 4, failed: 0 } },
+  },
+  code_review: {
+    goal: "Review the task's changes before the pull request through the lenses the backend assigned (see Review depth). Launch one read-only reviewer subagent per lens in parallel, send every introduced BLOCKER or CRITICAL candidate to one refuter subagent in a single batch, then write the ledger. Do not change code. An introduced BLOCKER or CRITICAL finding the refuter does not refute means `failed`, with exactly what development must change.",
+    reads: ["CLAUDE.md", ".factory/architecture.md", ".factory/threat-model.md"],
+    outputs: [
+      {
+        file: "code-review.md",
+        description: "Depth and lenses, then every finding with lens, severity, location, claim, proof, origin and refuter verdict; what development must change when failed; warnings and suggestions for the PR; pre-existing findings as follow-ups.",
+      },
+    ],
+    // `lenses`: the lenses reviewed, which must be the assigned ones. `findings`: the ledger.
+    extras: z.object({ lenses: z.array(z.enum(REVIEW_LENSES)), findings: z.array(reviewFinding).default([]) }),
+    extrasExample: {
+      lenses: ["reliability"],
+      findings: [
+        {
+          id: "F-1",
+          lens: "reliability",
+          severity: "WARNING",
+          location: "test/todos.test.js:30",
+          claim: "The test asserts only the mock, so removing the title check in src/todos.js would still pass.",
+          proof: "test/todos.test.js:30 asserts only store.add was called; no test sends an empty title (grep -n title test/)",
+          origin: "introduced",
+          refuter: "not_needed",
+        },
+      ],
+    },
   },
   pr: {
     goal: "Push the task branch and open the pull request with the pr-report template. Do not merge.",
