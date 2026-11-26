@@ -33,7 +33,8 @@ export class ProjectStore {
         : loadProjectConfig(repoPath);
     const values = {
       name: config.name,
-      remote: git(repoPath, ["remote", "get-url", "origin"]),
+      // The configured URL: get-url would apply url.<x>.insteadOf rewrites and hide the GitHub slug.
+      remote: git(repoPath, ["config", "--get", "remote.origin.url"]),
       defaultBranch: git(repoPath, ["rev-parse", "--abbrev-ref", "HEAD"]) ?? "main",
       config: config as Record<string, unknown>,
       updatedAt: this.now(),
