@@ -24,6 +24,7 @@ import { DefinitionService } from "./definition/definition-service.js";
 import { DefinitionStore } from "./db/definition-store.js";
 import { routeStepPolicy } from "./steps/policy-router.js";
 import { SettingsService } from "./settings/settings-service.js";
+import { TemplateSyncService } from "./template/template-sync-service.js";
 import { StepService } from "./steps/step-service.js";
 
 export interface Backend {
@@ -86,6 +87,7 @@ export async function startBackend(config: ForgeConfig, opts: { logger?: boolean
   const projects = new ProjectStore(db);
   const plans = new PlanStore(db, Date.now, (event) => bus.publish(event));
   const settings = new SettingsService(config, plans);
+  const templateSync = new TemplateSyncService({ config, projects, plans });
   const queue = new SchedulerService({ config, plans, runs, threads, runService, log, limits: () => settings.get() });
   service.apiKeyHelper = () => settings.apiKeyHelper();
   schedulerRef.current = queue;
@@ -131,6 +133,7 @@ export async function startBackend(config: ForgeConfig, opts: { logger?: boolean
     orchestrator,
     definition,
     settings,
+    templateSync,
     config,
     bus,
     tmuxSocket: config.tmuxSocket,
@@ -143,6 +146,7 @@ export async function startBackend(config: ForgeConfig, opts: { logger?: boolean
   await runService.reconcile();
   definition.reconcile();
   definition.startWatching(config.prPollIntervalMs);
+  if (config.templateSyncIntervalMs > 0) templateSync.start(config.templateSyncIntervalMs);
   service.startSweeper();
   watcher.start();
   queue.start();
@@ -171,6 +175,7 @@ export async function startBackend(config: ForgeConfig, opts: { logger?: boolean
       unsubscribe();
       await queue.stop();
       await definition.stopWatching();
+      await templateSync.stop();
       await watcher.stop();
       await app.close();
       await service.shutdown();
