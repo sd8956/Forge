@@ -1,8 +1,10 @@
+import { execFileSync } from "node:child_process";
 import { chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { afterEach, describe, expect, it } from "vitest";
+import WebSocket from "ws";
 import { startBackend, type Backend } from "../src/app.js";
 import type { ForgeConfig } from "../src/config.js";
 import { Tmux } from "../src/runner/tmux.js";
@@ -46,6 +48,20 @@ async function consoleTools(url: string, token: string, projectId: string) {
 }
 
 describe("project console", () => {
+  it("sizes the session to the panel from the first message, sent before the route has found the session", async () => {
+    const ctx = await setup();
+    expect((await ctx.api.request("POST", `/projects/${ctx.id}/console`, {})).status).toBe(200);
+    const cookie = ((await fetch(ctx.backend.loginLink(), { redirect: "manual" })).headers.get("set-cookie") ?? "").split(";")[0] ?? "";
+    const socket = new WebSocket(`${ctx.backend.url.replace("http", "ws")}/ws/console/${ctx.id}`, { headers: { cookie, origin: ctx.backend.url } });
+    cleanups.push(() => socket.terminate());
+    socket.on("error", () => undefined);
+    // The panel sends its size as soon as the socket opens, like Terminal.tsx does.
+    socket.once("open", () => socket.send(JSON.stringify({ type: "resize", cols: 90, rows: 20 })));
+    const size = () => execFileSync("tmux", ["-L", ctx.config.tmuxSocket, "list-clients", "-F", "#{client_width}x#{client_height}"], { encoding: "utf8" }).trim();
+    await waitFor(() => size() === "90x20", "the tmux client to take the panel's size", 5_000).catch(() => undefined);
+    expect(size()).toBe("90x20");
+  });
+
   it("starts the person's own Claude Code in the project with Forge's tools, asking before every action", async () => {
     const root = scratch();
     cleanups.push(() => removeScratch(root));

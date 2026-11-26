@@ -22,6 +22,8 @@ export function useTmuxTerminal(path: string, control: boolean) {
       convertEol: false,
       cursorBlink: control,
       disableStdin: !control,
+      // tmux keeps the history: a second copy here drifts from the TUI and garbles the screen on scroll.
+      scrollback: control ? 0 : 1000,
       fontFamily: '"JetBrains Mono", ui-monospace, monospace',
       fontSize: 13,
       theme: { background: "#0b0c0d", foreground: "#d9d7d2", cursor: "#fdba74" },
@@ -48,9 +50,11 @@ export function useTmuxTerminal(path: string, control: boolean) {
     const input = term.onData((data) => {
       if (control && socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: "input", data }));
     });
-    window.addEventListener("resize", resize);
+    // The drawer and panes change size without a window resize; tmux must always know the real size.
+    const observer = new ResizeObserver(resize);
+    observer.observe(container.current);
     return () => {
-      window.removeEventListener("resize", resize);
+      observer.disconnect();
       input.dispose();
       socket.close();
       socketRef.current = null;

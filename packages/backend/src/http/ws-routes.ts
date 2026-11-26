@@ -60,6 +60,7 @@ export async function registerWsRoutes(app: FastifyInstance, deps: WsDeps): Prom
 
   /** The orchestrator's terminal: this is where the person talks to it, so control is the usual mode. */
   app.get("/ws/orchestrator/:projectId", { websocket: true }, async (socket, request) => {
+    const early = holdMessages(socket);
     const params = z.object({ projectId: z.uuid() }).safeParse(request.params);
     const query = z.object({ mode: z.enum(["view", "control"]).default("control") }).safeParse(request.query);
     const session = params.success ? await deps.orchestratorSession(params.data.projectId) : null;
@@ -69,26 +70,42 @@ export async function registerWsRoutes(app: FastifyInstance, deps: WsDeps): Prom
     }
     const control = query.data.mode === "control";
     if (control) deps.onOrchestratorControl(params.data.projectId, session);
-    attachTerminal(socket, deps.tmuxSocket, session.tmuxSession, control);
+    attachTerminal(socket, deps.tmuxSocket, session.tmuxSession, control, early());
   });
 
   /** The project console: the person's own session, always in control mode. */
   app.get("/ws/console/:projectId", { websocket: true }, async (socket, request) => {
+    const early = holdMessages(socket);
     const params = z.object({ projectId: z.uuid() }).safeParse(request.params);
     const session = params.success ? await deps.consoleSession(params.data.projectId) : null;
     if (!session) {
       socket.close(4404, "No console for this project");
       return;
     }
-    attachTerminal(socket, deps.tmuxSocket, session, true);
+    attachTerminal(socket, deps.tmuxSocket, session, true, early());
   });
+}
+
+/**
+ * Keeps the messages that arrive while an async route looks up its session:
+ * the panel sends its size as soon as the socket opens, and losing it leaves
+ * tmux drawing a 120x32 screen into a smaller terminal.
+ */
+function holdMessages(socket: WebSocket): () => Buffer[] {
+  const held: Buffer[] = [];
+  const hold = (raw: Buffer) => held.push(raw);
+  socket.on("message", hold);
+  return () => {
+    socket.off("message", hold);
+    return held;
+  };
 }
 
 /**
  * Bridges a panel WebSocket to a tmux session through a pty. `view` attaches
  * read-only and drops input; `control` forwards keystrokes.
  */
-function attachTerminal(socket: WebSocket, tmuxSocket: string, session: string, control: boolean): void {
+function attachTerminal(socket: WebSocket, tmuxSocket: string, session: string, control: boolean, early: Buffer[] = []): void {
   const args = ["-L", tmuxSocket, "attach", ...(control ? [] : ["-r"]), "-t", `=${session}`];
   const pty = spawnPty("tmux", args, { name: "xterm-256color", cols: 120, rows: 32, env: { ...process.env, TERM: "xterm-256color" } });
   pty.onData((data) => {
@@ -97,7 +114,7 @@ function attachTerminal(socket: WebSocket, tmuxSocket: string, session: string, 
   pty.onExit(() => {
     if (socket.readyState === socket.OPEN) socket.close(1000, "Session ended");
   });
-  socket.on("message", (raw: Buffer) => {
+  const handle = (raw: Buffer) => {
     let message: z.infer<typeof terminalMessage>;
     try {
       message = terminalMessage.parse(JSON.parse(raw.toString()));
@@ -106,7 +123,9 @@ function attachTerminal(socket: WebSocket, tmuxSocket: string, session: string, 
     }
     if (message.type === "resize") pty.resize(message.cols, message.rows);
     else if (control) pty.write(message.data);
-  });
+  };
+  socket.on("message", handle);
+  early.forEach(handle);
   // Closing the panel detaches the tmux client; the session keeps running.
   socket.on("close", () => pty.kill());
 }

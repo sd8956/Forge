@@ -363,6 +363,12 @@ test("opens the project console from any page, talks to it, and stops it", async
       .map((t) => t.data ?? "")
       .join("");
   await expect.poll(typed, { timeout: 10_000 }).toContain("why is TASK-002 blocked?");
+  // The wheel must not scroll the panel's own copy of the screen (tmux keeps the history).
+  await drawer.getByTestId("console-terminal").hover();
+  await page.mouse.wheel(0, -600);
+  await page.mouse.wheel(0, -600);
+  expect(await drawer.locator(".xterm-viewport").evaluate((el: { scrollHeight: number; clientHeight: number }) => el.scrollHeight - el.clientHeight)).toBeLessThanOrEqual(1);
+  await expect(drawer.getByTestId("console-terminal")).toContainText("fake claude ready");
   await page.screenshot({ path: join(shots, "console.png"), fullPage: true });
   await drawer.getByRole("button", { name: "Stop" }).click();
   await expect(drawer.getByRole("button", { name: "Start console" })).toBeVisible();
