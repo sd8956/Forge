@@ -371,6 +371,23 @@ test("opens the project console from any page, talks to it, and stops it", async
   await page.mouse.wheel(0, -600);
   expect(await drawer.locator(".xterm-viewport").evaluate((el: { scrollHeight: number; clientHeight: number }) => el.scrollHeight - el.clientHeight)).toBeLessThanOrEqual(1);
   await expect(drawer.getByTestId("console-terminal")).toContainText("fake claude ready");
+  // Dragging the top edge up makes the console taller, and tmux gets the new size.
+  const rows = () => Number(execFileSync("tmux", ["-L", state.socket, "list-clients", "-F", "#{session_name} #{client_height}"], { encoding: "utf8" }).split("\n").find((l) => l.startsWith("forge-console-"))?.split(" ")[1]);
+  const before = { box: (await drawer.getByTestId("console-terminal").boundingBox())?.height ?? 0, rows: rows() };
+  const handle = drawer.getByRole("separator", { name: "Resize the console" });
+  const edge = await handle.boundingBox();
+  if (!edge) throw new Error("no resize handle");
+  await page.mouse.move(edge.x + edge.width / 2, edge.y + edge.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(edge.x + edge.width / 2, edge.y - 150, { steps: 5 });
+  await page.mouse.up();
+  await expect.poll(async () => (await drawer.getByTestId("console-terminal").boundingBox())?.height ?? 0).toBeGreaterThan(before.box + 100);
+  await expect.poll(rows).toBeGreaterThan(before.rows + 5);
+  // The keyboard works too: the arrows shrink and grow it.
+  const tall = (await drawer.getByTestId("console-terminal").boundingBox())?.height ?? 0;
+  await handle.focus();
+  await page.keyboard.press("ArrowDown");
+  await expect.poll(async () => (await drawer.getByTestId("console-terminal").boundingBox())?.height ?? 0).toBeLessThan(tall);
   await page.screenshot({ path: join(shots, "console.png"), fullPage: true });
   await drawer.getByRole("button", { name: "Stop" }).click();
   await expect(drawer.getByRole("button", { name: "Start console" })).toBeVisible();

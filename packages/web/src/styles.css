@@ -286,4 +286,8 @@ input.field { height: var(--control-height); }
 .nav-button:hover, .nav-button.active { background: var(--brand-soft); color: var(--brand); }
 .console-drawer { position: sticky; bottom: 0; z-index: 10; margin-top: 18px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.18); }
 .console-terminal { border-radius: 0; height: 42vh; }
+.console-resize { height: 8px; flex: none; cursor: ns-resize; touch-action: none; position: relative; }
+.console-resize::after { content: ""; position: absolute; left: 50%; top: 2px; width: 40px; height: 4px; margin-left: -20px; border-radius: 2px; background: var(--border); }
+.console-resize:hover::after, .console-resize:focus-visible::after { background: var(--brand); }
+.console-resize:focus-visible { outline: none; }
 .console-state { padding: 0 14px; }
