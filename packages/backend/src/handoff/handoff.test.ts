@@ -140,7 +140,7 @@ describe("validateReport", () => {
   });
 
   it("asks for red/green evidence only when the pipeline turns tdd_evidence on", async () => {
-    const plain = { requires: ["dev-notes.md"], every_ac_has_tc: false, all_cases_pass: false, pr_created: false, threads_answered: false, tdd_evidence: false };
+    const plain = { requires: ["dev-notes.md"], every_ac_has_tc: false, all_cases_pass: false, pr_created: false, threads_answered: false, tdd_evidence: false, review_clean: false };
     const artifacts = output("development", { commits: ["abc1234"] }, { "dev-notes.md": "n" });
     expect((await validateReport(ctx("development", { artifacts }, { exit: plain }))).ok).toBe(true);
   });
