@@ -30,4 +30,6 @@ updated automatically so they always have the latest.
 ## Consequences
 
 - Tasks already running keep their branch's copy until they merge the base branch.
+- Recognizing old copies needs Forge's git history. In a shallow clone of Forge (CI's default checkout) every old copy
+  looks customized, so sync only adds new files and lists the rest, never overwriting; CI fetches the full history.
 - A project that wants a template file to stay as it is edits it; from then on it is reported, not updated.
