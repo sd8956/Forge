@@ -141,6 +141,12 @@ a { color: var(--brand); }
 .tabs { overflow-x: auto; }
 .tabs button { white-space: nowrap; background: none; border: 0; border-bottom: 2px solid transparent; padding: 10px 14px; color: var(--text-muted); font: 500 14px var(--font-body); cursor: pointer; }
 .tabs button[aria-selected="true"] { color: var(--text); border-bottom-color: var(--brand); }
+.tab-count { display: inline-block; min-width: 20px; margin-left: 4px; padding: 0 6px; border-radius: 999px; background: var(--surface-2); color: var(--text-muted); font-size: 12px; text-align: center; }
+.tabs button[aria-selected="true"] .tab-count { background: var(--brand-soft); color: var(--brand); }
+.task-lists { margin-bottom: 18px; }
+.task-lists .tabs { margin-top: -6px; }
+.list-hint { margin: 0 0 6px; }
+.pager { display: flex; align-items: center; justify-content: flex-end; gap: 10px; padding-top: 10px; border-top: 1px solid var(--border); }
 table { width: 100%; border-collapse: collapse; }
 th, td { text-align: left; padding: 10px 12px; border-top: 1px solid var(--border); vertical-align: top; }
 th { font-weight: 500; color: var(--text-muted); border-top: 0; }

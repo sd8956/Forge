@@ -39,6 +39,7 @@ test("adds a project from the empty panel", async ({ page }) => {
   await page.getByLabel("Repository path").fill(state.project);
   await page.getByRole("button", { name: "Add project" }).click();
   await expect(page.getByRole("heading", { name: "Execution" })).toBeVisible();
+  await page.getByRole("tab", { name: /Backlog/ }).click();
   await expect(page.getByText("Add and list todos")).toBeVisible();
 });
 
@@ -52,7 +53,8 @@ test("shows a run moving across the board live, ending in Awaiting review", asyn
   await api("/runs", { projectPath: state.project, taskId: "TASK-001" });
   const card = page.getByTestId("run-card-TASK-001");
   await expect(card).toBeVisible();
-  const prs = page.getByRole("region", { name: "Pull requests" });
+  await page.getByRole("tab", { name: /Pull requests/ }).click();
+  const prs = page.getByRole("tabpanel", { name: "Pull requests" });
   await expect(prs.getByTestId("pr-row-TASK-001")).toBeVisible({ timeout: 40_000 });
   await expect(prs.getByText("Awaiting review")).toBeVisible();
   await expect(prs.getByText("PR #7")).toBeVisible();
@@ -92,6 +94,7 @@ test("shows the pipeline, the evidence and the artifacts of a run", async ({ pag
 
 test("refuses to launch a task whose dependency is not merged", async ({ page }) => {
   await login(page);
+  await page.getByRole("tab", { name: /Backlog/ }).click();
   await expect(page.getByText("Waits for TASK-001 merge")).toBeVisible();
   await page.getByRole("button", { name: "Launch TASK-002" }).click();
   await expect(page.getByRole("alert")).toContainText("TASK-002 depends on TASK-001, which is not merged into main yet");
@@ -99,6 +102,7 @@ test("refuses to launch a task whose dependency is not merged", async ({ page })
 
 test("watches a live session read-only, takes control explicitly, and cancels the run", async ({ page }) => {
   await login(page);
+  await page.getByRole("tab", { name: /Backlog/ }).click();
   await page.getByRole("button", { name: "Launch TASK-003" }).click();
   const card = page.getByRole("region", { name: "Plan + test plan" }).getByTestId("run-card-TASK-003");
   await expect(card).toBeVisible();
@@ -119,7 +123,8 @@ test("answers a review comment and shows the thread as answered", async ({ page 
   const gh = JSON.parse(readFileSync(state.ghState, "utf8")) as { prs: Record<string, { comments: unknown[] }> };
   gh.prs["7"]?.comments.push({ id: 51, login: "sd8956", body: "Please rename createTodo", path: "src/server.js", line: 3, url: "https://github.com/example/demo-project/pull/7#discussion_r51" });
   writeFileSync(state.ghState, JSON.stringify(gh));
-  await expect(page.getByRole("region", { name: "Pull requests" }).getByText(/review round 1/)).toBeVisible({ timeout: 40_000 });
+  await page.getByRole("tab", { name: /Pull requests/ }).click();
+  await expect(page.getByRole("tabpanel", { name: "Pull requests" }).getByText(/review round 1/)).toBeVisible({ timeout: 40_000 });
   await page.getByRole("region", { name: "Review" }).getByTestId("run-card-TASK-001").click();
   await page.getByRole("tab", { name: "Review" }).click();
   await expect(page.getByRole("row", { name: /review_comment:51/ }).getByText("Answered")).toBeVisible();
@@ -157,7 +162,8 @@ test("approves a proposed plan in the panel, shows why it waits, and pauses and 
   await plan.getByRole("button", { name: "Approve plan" }).click();
   await expect(plan).toBeHidden();
 
-  const queued = page.getByRole("region", { name: "Queued" });
+  await page.getByRole("tab", { name: /Queued/ }).click();
+  const queued = page.getByRole("tabpanel", { name: "Queued" });
   await expect(queued.getByTestId("queued-TASK-003")).toContainText("Queue paused: Paused by a person");
   await page.getByRole("button", { name: "Resume queue" }).click();
   await expect(page.getByRole("region", { name: "Plan + test plan" }).getByTestId("run-card-TASK-003")).toBeVisible({ timeout: 20_000 });
