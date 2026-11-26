@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { startBackend } from "../src/app.js";
@@ -180,6 +180,50 @@ describe("pipeline run with a fake claude", () => {
     expect(res.status).toBe(400);
     expect((res.body as { message: string }).message).toContain("TASK-002 depends on TASK-001, which is not merged into main yet.");
     expect((await ctx.api.runs()).map((r) => r.id)).toEqual([first.id]);
+  });
+
+  it("starts a task from the latest origin/<base>, pulling what was merged on GitHub into a clean checkout", async () => {
+    const ctx = await setup({ plan: ["done"] });
+    const origin = join(ctx.root, "origin.git");
+    const run = (cwd: string, ...args: string[]) => execFileSync("git", ["-C", cwd, "-c", "user.name=t", "-c", "user.email=t@example.invalid", ...args], { encoding: "utf8" });
+    execFileSync("git", ["init", "-q", "--bare", "-b", "main", origin]);
+    run(ctx.project, "remote", "add", "origin", origin);
+    run(ctx.project, "push", "-q", "-u", "origin", "main");
+    // Someone merges on GitHub: origin/main gets a commit the local checkout does not have.
+    const other = join(ctx.root, "other-clone");
+    execFileSync("git", ["clone", "-q", origin, other]);
+    writeFileSync(join(other, "MERGED.md"), "merged on GitHub\n");
+    run(other, "add", "MERGED.md");
+    run(other, "commit", "-qm", "merged elsewhere");
+    run(other, "push", "-q", "origin", "main");
+
+    const started = await ctx.api.startRun(ctx.project);
+    const detail = await ctx.api.run(started.id);
+    expect(existsSync(join(ctx.project, ".worktrees", "TASK-001", "MERGED.md"))).toBe(true);
+    expect(existsSync(join(ctx.project, "MERGED.md"))).toBe(true);
+    expect(detail.events.some((e) => e.type === "base_updated")).toBe(true);
+  });
+
+  it("still starts a task when the checkout cannot be updated, and says why", async () => {
+    const ctx = await setup({ plan: ["done"] });
+    const origin = join(ctx.root, "origin.git");
+    const run = (cwd: string, ...args: string[]) => execFileSync("git", ["-C", cwd, "-c", "user.name=t", "-c", "user.email=t@example.invalid", ...args], { encoding: "utf8" });
+    execFileSync("git", ["init", "-q", "--bare", "-b", "main", origin]);
+    run(ctx.project, "remote", "add", "origin", origin);
+    run(ctx.project, "push", "-q", "-u", "origin", "main");
+    const other = join(ctx.root, "other-clone");
+    execFileSync("git", ["clone", "-q", origin, other]);
+    writeFileSync(join(other, "MERGED.md"), "x\n");
+    run(other, "add", "MERGED.md");
+    run(other, "commit", "-qm", "merged elsewhere");
+    run(other, "push", "-q", "origin", "main");
+    // The person is editing a tracked file in the checkout.
+    writeFileSync(join(ctx.project, "Makefile"), `${readFileSync(join(ctx.project, "Makefile"), "utf8")}\n# local edit\n`);
+
+    const started = await ctx.api.startRun(ctx.project);
+    const detail = await ctx.api.run(started.id);
+    expect(detail.events.find((e) => e.type === "base_not_updated")?.payload).toMatchObject({ why: "the project checkout has uncommitted changes" });
+    expect(existsSync(join(ctx.project, "MERGED.md"))).toBe(false);
   });
 
   it("accepts a dependency merged with a merge commit", async () => {

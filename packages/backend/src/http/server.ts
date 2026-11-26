@@ -15,6 +15,7 @@ import { registerDefinitionRoutes } from "./definition-routes.js";
 import type { DefinitionService } from "../definition/definition-service.js";
 import { apiKeyInput, settingsPatch, SettingsError, type SettingsService } from "../settings/settings-service.js";
 import { loadProjectConfig } from "../projects/project-config.js";
+import type { TemplateSyncService } from "../template/template-sync-service.js";
 import type { PrThreadStore } from "../db/pr-thread-store.js";
 import type { ProjectStore } from "../db/project-store.js";
 import { DuplicateRunError, toRunView, type RunStore } from "../db/run-store.js";
@@ -54,6 +55,7 @@ interface ServerDeps {
   orchestrator: OrchestratorService;
   definition: DefinitionService;
   settings: SettingsService;
+  templateSync: TemplateSyncService;
   config: ForgeConfig;
   bus: EventBus;
   tmuxSocket: string;
@@ -165,6 +167,21 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
       return settingsRefused(reply, error);
     }
   });
+  /** Forge-file updates for a project: the last check, and a check now ("Check now" in Settings). */
+  app.get("/projects/:projectId/template", (request, reply) => {
+    const params = z.object({ projectId: z.uuid() }).safeParse(request.params);
+    if (!params.success) return badRequest(reply, params.error);
+    if (!deps.projects.get(params.data.projectId)) return reply.code(404).send({ error: "unknown_project" });
+    return deps.templateSync.last(params.data.projectId) ?? { status: "never_checked" };
+  });
+  app.post("/projects/:projectId/template/sync", async (request, reply) => {
+    const params = z.object({ projectId: z.uuid() }).safeParse(request.params);
+    if (!params.success) return badRequest(reply, params.error);
+    const project = deps.projects.get(params.data.projectId);
+    if (!project) return reply.code(404).send({ error: "unknown_project" });
+    return deps.templateSync.sync(project);
+  });
+
   /** A project's settings come from its project.yaml, the source of truth; the panel shows them read-only. */
   app.get("/projects/:projectId/settings", (request, reply) => {
     const params = z.object({ projectId: z.uuid() }).safeParse(request.params);

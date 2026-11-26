@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, type ForgeSettings, type Project, type ProjectSettings } from "../api.js";
+import { api, type ForgeSettings, type Project, type ProjectSettings, type TemplateSync } from "../api.js";
 
 function useMessage() {
   const [message, setMessage] = useState<{ text: string; error: boolean } | null>(null);
@@ -92,6 +92,54 @@ function Authentication({ settings, onSaved }: { settings: ForgeSettings; onSave
   );
 }
 
+function templateText(t: TemplateSync): string {
+  const changed = (t.updated?.length ?? 0) + (t.added?.length ?? 0);
+  const kept = t.customized?.length ? ` · ${t.customized.length} changed in this project, left alone` : "";
+  switch (t.status) {
+    case "never_checked":
+      return "Not checked yet";
+    case "up_to_date":
+      return `Up to date${kept}`;
+    case "pr_opened":
+    case "pr_updated":
+    case "pr_open":
+      return `${changed} file${changed === 1 ? "" : "s"} to update, in a pull request${kept}`;
+    case "skipped":
+      return `Not checked: ${t.reason ?? ""}`;
+    default:
+      return `Check failed: ${t.reason ?? ""}`;
+  }
+}
+
+/** Forge keeps a project's agents, skills and step settings current through a PR; this shows where it stands. */
+function TemplateRow({ project }: { project: Project }) {
+  const [sync, setSync] = useState<TemplateSync | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    void api.templateStatus(project.id).then(setSync, () => setSync(null));
+  }, [project.id]);
+  return (
+    <>
+      <dt>Forge files</dt>
+      <dd className="template-row">
+        <span data-testid="template-status">{sync ? templateText(sync) : "…"}</span>
+        {sync?.prUrl ? <a href={sync.prUrl} target="_blank" rel="noreferrer">Open the PR</a> : null}
+        <button
+          type="button"
+          className="btn"
+          disabled={busy}
+          onClick={() => {
+            setBusy(true);
+            void api.syncTemplate(project.id).then(setSync, () => undefined).finally(() => setBusy(false));
+          }}
+        >
+          {busy ? "Checking…" : "Check now"}
+        </button>
+      </dd>
+    </>
+  );
+}
+
 function ProjectSection({ project }: { project: Project }) {
   const [settings, setSettings] = useState<ProjectSettings | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -115,6 +163,7 @@ function ProjectSection({ project }: { project: Project }) {
             <dd>{settings.allowedAuthors.length ? <span className="mono">{settings.allowedAuthors.join(", ")}</span> : <span className="muted">None: write collaborators only</span>}</dd>
             <dt>PR poll interval</dt>
             <dd>{settings.pollIntervalSeconds ? <span className="mono">{settings.pollIntervalSeconds} s</span> : <span className="muted">Forge's default</span>}</dd>
+            <TemplateRow project={project} />
             <dt>Commands</dt>
             <dd>
               <table className="commands" aria-label="Commands">

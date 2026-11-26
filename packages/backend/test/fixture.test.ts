@@ -34,6 +34,13 @@ describe("demo-project fixture contract", () => {
     expect(fixer?.settings.permissions.allow.some((r) => r.startsWith("Bash(gh api -X POST repos/:"))).toBe(false);
   });
 
+  it("lets review_fix merge the base branch to resolve a conflict, never rebase or force push", () => {
+    const fixer = steps.find((s) => s.step.id === "review_fix");
+    expect(fixer?.settings.permissions.allow).toEqual(expect.arrayContaining(["Bash(git fetch origin *)", "Bash(git merge origin/*)"]));
+    expect(fixer?.settings.permissions.deny).toEqual(expect.arrayContaining(["Bash(git push --force:*)", "Bash(git push -f:*)"]));
+    expect(readFileSync(join(FIXTURE, ".claude", "skills", "pr-thread-reply", "SKILL.md"), "utf8")).toContain("conflict:<head>@<base>");
+  });
+
   it("lets the pr step look up an existing PR and development run the e2e suite without a prompt", () => {
     expect(steps.find((s) => s.step.id === "pr")?.settings.permissions.allow).toContain("Bash(gh pr list:*)");
     expect(steps.find((s) => s.step.id === "development")?.settings.permissions.allow).toContain("Bash(make e2e:*)");

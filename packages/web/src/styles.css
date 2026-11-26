@@ -243,3 +243,4 @@ input.field { height: var(--control-height); }
 .commands tr, .commands td { border: 0; background: none; }
 .commands td { padding: 1px 20px 1px 0; vertical-align: top; }
 @media (max-width: 700px) { .settings-list { grid-template-columns: 1fr; } }
+.template-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }

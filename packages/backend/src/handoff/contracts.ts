@@ -70,7 +70,7 @@ export const STEP_CONTRACTS: Readonly<Record<StepKind, StepContract>> = {
     extrasExample: { pr_url: "https://github.com/owner/repo/pull/1", pr_number: 1 },
   },
   review_fix: {
-    goal: "Answer every pull request thread and failed check listed below: fix what applies (test-first, committed), reply on each thread with what you changed or why it does not apply. Do not push; the pr step pushes after security and e2e pass again.",
+    goal: "Answer every pull request thread, failed check and conflict with the base branch listed below: fix what applies (test-first, committed; a conflict is fixed by merging the base branch and committing the merge), reply on each thread with what you changed or why it does not apply. Do not push; the pr step pushes after security and e2e pass again.",
     reads: ["CLAUDE.md", ".factory/threat-model.md"],
     outputs: [{ file: "replies.md", description: "One section per thread: what was asked, what you did, the reply you posted." }],
     extras: z.object({

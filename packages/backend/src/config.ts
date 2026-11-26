@@ -39,6 +39,8 @@ export interface ForgeConfig {
   schedulerIntervalMs: number;
   /** Project template a definition copies (agents, skills, pipeline, step settings). */
   templateDir: string;
+  /** How often projects are checked for newer Forge files (0 turns the automatic check off). */
+  templateSyncIntervalMs: number;
 }
 
 function intFromEnv(value: string | undefined, fallback: number): number {
@@ -70,6 +72,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, cwd = process.c
     maxConcurrency: Math.max(1, intFromEnv(env.FORGE_MAX_CONCURRENCY, 3)),
     usagePausePercent: intFromEnv(env.FORGE_USAGE_PAUSE_PERCENT, 90),
     schedulerIntervalMs: intFromEnv(env.FORGE_SCHEDULER_INTERVAL_MS, 5000),
+    templateSyncIntervalMs: intFromEnv(env.FORGE_TEMPLATE_SYNC_MS, 6 * 60 * 60_000),
     templateDir: resolve(env.FORGE_TEMPLATE_DIR ?? join(import.meta.dirname, "..", "..", "..", "fixtures", "demo-project")),
   };
 }

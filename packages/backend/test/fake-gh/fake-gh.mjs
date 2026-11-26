@@ -51,9 +51,14 @@ if (cmd === "pr" && sub === "view") {
   const out = {};
   for (const key of (flag("--json") ?? "").split(",")) out[key] = p[key];
   process.stdout.write(JSON.stringify(out));
+} else if (cmd === "pr" && sub === "list") {
+  // Only what Forge asks: the URL of the open PR for a head branch, or nothing.
+  const head = flag("--head");
+  const found = Object.entries(state.prs ?? {}).find(([, p]) => p.headRefName === head && p.state === "OPEN");
+  process.stdout.write(found ? `https://github.com/example/repo/pull/${found[0]}\n` : "\n");
 } else if (cmd === "pr" && sub === "create") {
   const number = Object.keys(state.prs ?? {}).length + 100;
-  state.prs = { ...state.prs, [number]: { state: "OPEN", headRefOid: "def0000", headRefName: flag("--head"), title: flag("--title"), body: flag("--body"), statusCheckRollup: [], comments: [], issueComments: [], reviews: [] } };
+  state.prs = { ...state.prs, [number]: { state: "OPEN", headRefOid: "def0000", headRefName: flag("--head"), baseRefName: flag("--base"), title: flag("--title"), body: flag("--body"), statusCheckRollup: [], comments: [], issueComments: [], reviews: [] } };
   changed = true;
   process.stdout.write(`https://github.com/example/repo/pull/${number}\n`);
 } else if (cmd === "pr" && sub === "edit") {

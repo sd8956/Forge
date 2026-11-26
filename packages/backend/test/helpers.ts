@@ -69,6 +69,8 @@ export function testConfig(root: string, overrides: Partial<ForgeConfig> = {}): 
     usagePausePercent: 90,
     schedulerIntervalMs: 200,
     templateDir: FIXTURE,
+    // Tests trigger template syncs explicitly.
+    templateSyncIntervalMs: 0,
     ...overrides,
   };
 }

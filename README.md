@@ -27,8 +27,20 @@ pnpm forge run-task --project <path> --task TASK-001
 pnpm forge status [<run-id>]
 pnpm forge resume <run-id>                         # after a person fixed what needs_human asked for
 pnpm forge cancel <run-id>
+pnpm forge service install                         # start Forge at login (systemd user service, Linux)
+pnpm forge template sync --project <path>          # update the project's Forge files now (through a PR)
 tmux -L forge attach -t forge-TASK-001-plan-1      # watch a step or answer a prompt
 ```
+
+`forge service install` writes `~/.config/systemd/user/forge.service` (it captures your current `PATH`, so run it
+from a shell where `claude`, `gh`, `tmux` and `engram` resolve) and starts it; `forge service uninstall` removes it,
+and `journalctl --user -u forge` shows its log. Restarting the service stops only the backend: step sessions keep
+running in tmux and the backend picks them up again. To start Forge at boot without logging in, also run
+`loginctl enable-linger $USER`.
+
+Forge keeps each project's agents, skills, pipeline and step settings current: at start and every 6 hours
+(`FORGE_TEMPLATE_SYNC_MS`, 0 turns it off) it opens or updates a "chore: update Forge files" PR on branch
+`forge/template-update`. Files a project changed itself are listed in the PR and never overwritten.
 
 The project must be a git repository with a `.factory/` folder and a `pipeline.yaml` (see
 `fixtures/demo-project/`), and must be trusted once in Claude Code. A task whose `Depends on:` tasks are not

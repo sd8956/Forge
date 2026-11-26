@@ -68,3 +68,10 @@
 
 - `task` from the definition's data model is not created; its `depends_on` and status live in the backlog files,
   `plan_task` and `run`.
+
+## Amendment (2026-11-25): every task starts from the latest base
+
+Before a task branches from the base branch, the run service fetches `origin/<base>` and fast-forwards the project
+checkout with the same rule as for dependencies (only on the base branch, clean, no divergence). A merge on GitHub (a
+dependency, a template update, the person's own change) reaches the next task without a manual pull. When the checkout
+cannot be updated, the task still starts and its run records `base_not_updated` with the reason.
