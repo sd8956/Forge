@@ -4,6 +4,10 @@ import type { RunView, StepView } from "@forge/shared";
 import { startBackend } from "./app.js";
 import { readToken, TOKEN_HEADER } from "./auth.js";
 import { baseUrl, loadConfig } from "./config.js";
+import { installService, uninstallService, UNIT_NAME, unitPath } from "./service/systemd.js";
+import { execFileSync } from "node:child_process";
+import { homedir } from "node:os";
+import { join } from "node:path";
 
 const USAGE = `Usage:
   pnpm forge serve
@@ -12,6 +16,8 @@ const USAGE = `Usage:
   pnpm forge resume <run-id> [--merge-base] [--no-wait]   --merge-base merges the base branch into the task branch first
   pnpm forge cancel <run-id>
   pnpm forge login                 prints a one-time link that opens the panel
+  pnpm forge service install|uninstall|status
+                                   a systemd user service that starts Forge at login (Linux)
 
 Exit codes of run-task and resume: 0 waiting_review, 1 failed, 3 needs_human, 4 cancelled.
 
@@ -155,6 +161,29 @@ async function main(): Promise<number> {
     case "login": {
       console.log((await api<{ url: string }>("/auth/login-link", { method: "POST", body: "{}" })).url);
       return 0;
+    }
+    case "service": {
+      const configHome = process.env.XDG_CONFIG_HOME || join(homedir(), ".config");
+      const systemctl = process.env.FORGE_SYSTEMCTL ?? "systemctl";
+      if (rest[0] === "install") {
+        const file = installService({ configHome, systemctl, repo: resolve(import.meta.dirname, "..", "..", ".."), node: process.execPath, path: process.env.PATH ?? "/usr/bin:/bin" });
+        console.log(`Installed ${file}. Forge starts at login; open the panel with: pnpm forge login`);
+        return 0;
+      }
+      if (rest[0] === "uninstall") {
+        console.log(uninstallService({ configHome, systemctl }) ? "Removed the Forge service. Running tmux sessions were left alone." : "The Forge service is not installed.");
+        return 0;
+      }
+      if (rest[0] === "status") {
+        console.log(`Unit: ${unitPath(configHome)}`);
+        try {
+          execFileSync(systemctl, ["--user", "status", "--no-pager", UNIT_NAME], { stdio: "inherit" });
+          return 0;
+        } catch {
+          return 3;
+        }
+      }
+      throw new Error(`Unknown service command.\n${USAGE}`);
     }
     case "cancel": {
       if (!rest[0]) throw new Error(`Missing run id.\n${USAGE}`);
