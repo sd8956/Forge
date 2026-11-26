@@ -274,6 +274,11 @@ describe("validateReport for code_review", () => {
       ok: false,
       issues: ["lenses is [reliability], but the backend assigned [risk, resilience, readability, reliability]; review exactly the assigned lenses"],
     });
+    // Repeating a lens must not stand in for the ones skipped.
+    expect(await check({ lenses: ["reliability", "reliability", "reliability", "reliability"], findings: [] })).toEqual({
+      ok: false,
+      issues: ["lenses is [reliability, reliability, reliability, reliability], but the backend assigned [risk, resilience, readability, reliability]; review exactly the assigned lenses"],
+    });
   });
 
   it("refuses done while an introduced BLOCKER or CRITICAL finding stands", async () => {

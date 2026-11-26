@@ -124,7 +124,8 @@ function checkReviewClean(ctx: ReportContext, extras: Record<string, unknown>): 
   const assigned = new Set<string>(ctx.lenses);
   const reported = (extras.lenses ?? []) as ReviewLens[];
   const issues: string[] = [];
-  if (reported.length !== assigned.size || !reported.every((l) => assigned.has(l))) {
+  // Same set, no repeats: a lens reported twice must not stand in for one that was skipped.
+  if (new Set(reported).size !== reported.length || reported.length !== assigned.size || !reported.every((l) => assigned.has(l))) {
     issues.push(`lenses is [${reported.join(", ")}], but the backend assigned [${ctx.lenses.join(", ")}]; review exactly the assigned lenses`);
   }
   for (const f of (extras.findings ?? []) as ReviewFinding[]) {
