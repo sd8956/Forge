@@ -119,8 +119,8 @@ const DEFINITION_FILES = {
   },
   def_test_strategy: { ".factory/test-strategy.md": "# Test strategy\n\nPlaywright for the web. Evidence: a screenshot per step.\n" },
   def_design: {
-    ".factory/design/tokens.json": '{"color": {"brand": "#c2410c"}}\n',
-    ".factory/design/components.md": "# Components\n\n- Link form\n",
+    ".factory/design/tokens.json": '{"color": {"brand": "#c2410c"}, "radius": {"card": "10px"}, "typography": {"body": "Inter, sans-serif"}}\n',
+    ".factory/design/components.md": "# Components\n\n## Link form\n\n- Library: Base UI (Field, Input)\n",
     ".factory/prototype/index.html": "<!doctype html><title>Shorten</title><h1>Shorten a link</h1><p>Design attempt ATTEMPT</p><script>document.title = 'prototype ran'</script>\n",
     ".factory/prototype/stats.html": "<!doctype html><title>Stats</title><h1>Link stats</h1>\n",
   },

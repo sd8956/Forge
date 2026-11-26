@@ -19,6 +19,10 @@ description: How the Forge e2e step turns test cases into committed Playwright s
 - Wrap each user action in `test.step(...)` and call `stepShot(page, "TC-01", "<step-name>")` from
   `e2e/evidence.js` after each step. It returns the screenshot path relative to `EVIDENCE_DIR`.
 - Assert the exact texts of the test plan with web-first assertions (`await expect(locator).toHaveText(...)`).
+- Worst-case data: for every case whose screen shows a list or text a user typed, also capture it with
+  data chosen to break the layout, not to look good: empty, one item, very long names, and many rows
+  (1,000 when the screen lists items). Change the data, not the component; name the shots
+  `worst-<what>` (for example `stepShot(page, "TC-02", "worst-1000-rows")`). A screen that breaks fails the case.
 - Prefer role and label locators (`getByRole`, `getByLabel`). No fixed sleeps.
 
 ## Run

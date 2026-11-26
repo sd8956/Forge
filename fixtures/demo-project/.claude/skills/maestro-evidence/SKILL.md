@@ -27,6 +27,9 @@ the same project still use `playwright-evidence`.
   ```
 
   Number the files in order (`01-…`, `02-…`). Maestro adds `.png`.
+- Worst-case data: for every case whose screen shows a list or text a user typed, also capture it with data
+  chosen to break the layout: empty, one item, very long names, and many rows. Change the data, not the
+  component; name the shots `worst-<what>`. A screen that breaks fails the case.
 - Assert the exact texts of the test plan with `assertVisible` (and `assertNotVisible` for removals). Prefer
   accessibility labels and ids over coordinates. No fixed waits: use `extendedWaitUntil` when something is slow.
 

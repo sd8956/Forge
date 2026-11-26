@@ -59,8 +59,8 @@ export const STAGE_CONTRACTS: Readonly<Record<DefinitionStage, StageContract>> =
     goal: "Design the interface as tokens, a component inventory and a clickable prototype with fake data.",
     reads: [".factory/requirements.md", ".factory/architecture.md"],
     writes: [
-      { path: ".factory/design/tokens.json", description: "Design tokens as a JSON object (color, typography, spacing, radius)." },
-      { path: ".factory/design/components.md", description: "Component inventory: name, states, which screens use it." },
+      { path: ".factory/design/tokens.json", description: "Design tokens as a JSON object: color, typography, radius (required, chosen for this product rather than a component library's defaults) and spacing." },
+      { path: ".factory/design/components.md", description: "Component inventory: one `## <Component>` section each, with `- Library: <name>` (or `- Library: hand-built: <why>`), its states and the screens that use it." },
       { path: ".factory/prototype/<screen>.html", description: "One self-contained HTML file per screen (inline CSS and JS, fake data, no external requests) that lays out well from 360 px to 1440 px wide. The person approves them one by one." },
     ],
   },
